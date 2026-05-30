@@ -1,20 +1,32 @@
 import { getDeviceFingerprint } from "./deviceFingerprint";
 
-const PRODUCTION_API_URL = "https://priva-ai-platform.onrender.com";
+const PRODUCTION_API_URL = "https://priva-ai-api.onrender.com";
 
 function normalizeApiBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
-/** In dev, use same-origin `/api` so Vite proxies to the production backend. */
-export const API_BASE = import.meta.env.DEV
-  ? ""
-  : normalizeApiBaseUrl(import.meta.env.VITE_API_URL || PRODUCTION_API_URL);
+function getConfiguredApiBaseUrl(): string {
+  return normalizeApiBaseUrl(import.meta.env.VITE_API_URL || PRODUCTION_API_URL);
+}
+
+/** Dev uses same-origin `/api` (Vite proxy). Production uses the configured backend URL. */
+export function getApiBaseUrl(): string {
+  return import.meta.env.PROD ? getConfiguredApiBaseUrl() : "";
+}
+
+export function buildApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const base = getApiBaseUrl();
+  return base ? `${base}${normalizedPath}` : normalizedPath;
+}
+
+export const API_BASE = getApiBaseUrl();
 
 const MASTER_KEY = import.meta.env.VITE_MASTER_KEY?.trim() || "";
 
-export const DOCUMENTS_API = `${API_BASE}/api/documents`;
-export const FOLDERS_API = `${API_BASE}/api/folders`;
+export const DOCUMENTS_API = buildApiUrl("/api/documents");
+export const FOLDERS_API = buildApiUrl("/api/folders");
 
 export const FOLDER_EMPTY_MESSAGE = "No information found in this folder.";
 
@@ -112,7 +124,7 @@ export async function fetchTrialStatus({
   planMode?: PlanMode;
 } = {}): Promise<TrialStatusPayload> {
   const headers = await buildClientHeaders({ token, planMode });
-  const res = await fetch(`${API_BASE}/api/trial/status`, { headers });
+  const res = await fetch(buildApiUrl("/api/trial/status"), { headers });
   const body = (await res.json().catch(() => ({}))) as TrialStatusPayload;
   if (!res.ok) {
     throw new Error("Failed to load trial status.");
@@ -291,7 +303,7 @@ export async function verifyFaceSnapshot(imageBase64: string): Promise<{
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
-  const res = await fetch(`${API_BASE}/api/auth/verify-face`, {
+  const res = await fetch(buildApiUrl("/api/auth/verify-face"), {
     method: "POST",
     headers,
     body: JSON.stringify({ image: imageBase64 }),
