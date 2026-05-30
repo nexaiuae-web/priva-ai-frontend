@@ -16,6 +16,7 @@ export default defineConfig({
     server: { entry: "server" },
   },
   server: {
+    allowedHosts: true,
     proxy: {
       "/api": {
         target: PRODUCTION_API_TARGET,
@@ -25,6 +26,6 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts: ["priva-ai-frontend-live.onrender.com"],
+    allowedHosts: true,
   },
 });
