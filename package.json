@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "start": "node dist/server/server.js",
     "build:dev": "vite build --mode development",
     "preview": "vite preview --config vite.config.ts",
     "lint": "eslint .",
