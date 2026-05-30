@@ -28,4 +28,7 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: ["priva-ai-frontend-live.onrender.com"],
+  },
 });
