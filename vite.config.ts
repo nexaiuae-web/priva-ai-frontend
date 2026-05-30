@@ -6,17 +6,20 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-// Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-// @cloudflare/vite-plugin builds from this — wrangler.jsonc main alone is insufficient.
 const PRODUCTION_API_TARGET = "https://priva-ai-platform.onrender.com";
 
 export default defineConfig({
   base: "./",
+  cloudflare: false,
   tanstackStart: {
-    server: { entry: "server" },
+    spa: {
+      enabled: true,
+      prerender: {
+        outputPath: "/index",
+      },
+    },
   },
   server: {
-    allowedHosts: true,
     proxy: {
       "/api": {
         target: PRODUCTION_API_TARGET,
@@ -24,8 +27,5 @@ export default defineConfig({
         secure: false,
       },
     },
-  },
-  preview: {
-    allowedHosts: true,
   },
 });
