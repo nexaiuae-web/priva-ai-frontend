@@ -149,34 +149,54 @@ function ChatPage() {
     : null;
 
   const fetchFoldersList = async () => {
-    if (!token || planMode === "free_trial") return;
+    if (!token || planMode === "free_trial") {
+      setFolders([]);
+      return;
+    }
     try {
       const list = await fetchFolders(token);
-      setFolders(list);
+      setFolders(Array.isArray(list) ? list : []);
     } catch (err) {
       console.warn("[KB] folders load failed:", err);
+      setFolders([]);
     }
   };
 
   const fetchDocs = async (folderId: string | null = currentFolderId) => {
     setDocsLoading(true);
     setDocsError("");
+    if (!token) {
+      setDocs([]);
+      setDocsLoading(false);
+      return;
+    }
     try {
       const headers = await buildClientHeaders({ token, planMode });
       const res = await fetch(buildDocumentsUrl(folderId), {
         headers,
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setDocs(normalizeDocuments(data));
-      } else {
-        setDocsError(`Could not load documents (${res.status}).`);
+        return;
       }
+
+      const raw = await res.text().catch(() => "");
+      const parsed = parseApiErrorPayload(raw);
+      setDocs([]);
+      setDocsError(
+        parsed.message ||
+          parsed.error ||
+          `Could not load documents (${res.status}).`,
+      );
     } catch (err) {
+      setDocs([]);
       setDocsError(
         isBackendUnreachableError(err)
-          ? "Cannot reach the document API on port 3005."
-          : "Failed to load documents.",
+          ? "Cannot reach the document API. Check your backend connection."
+          : err instanceof Error
+            ? err.message
+            : "Failed to load documents.",
       );
     } finally {
       setDocsLoading(false);
@@ -184,7 +204,15 @@ function ChatPage() {
   };
 
   const refreshKnowledgeBase = async (folderId: string | null = currentFolderId) => {
-    await Promise.all([fetchFoldersList(), fetchDocs(folderId)]);
+    try {
+      await Promise.all([fetchFoldersList(), fetchDocs(folderId)]);
+    } catch (err) {
+      console.warn("[KB] refresh failed:", err);
+      setDocs([]);
+      setDocsError(
+        err instanceof Error ? err.message : "Failed to refresh knowledge base.",
+      );
+    }
   };
 
   useEffect(() => {

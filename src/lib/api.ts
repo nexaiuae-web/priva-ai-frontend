@@ -388,8 +388,9 @@ export async function createFolder(token: string, name: string): Promise<FolderR
 }
 
 export function buildDocumentsUrl(folderId: string | null): string {
-  if (!folderId) return DOCUMENTS_API;
-  return `${DOCUMENTS_API}?folder_id=${encodeURIComponent(folderId)}`;
+  const base = buildApiUrl("/api/documents");
+  if (!folderId) return base;
+  return `${base}?folder_id=${encodeURIComponent(folderId)}`;
 }
 
 export async function moveDocumentToFolder(
@@ -425,6 +426,8 @@ export function normalizeDocuments(payload: unknown): DocumentRecord[] {
     const list = root.documents ?? root.data ?? root.files ?? root.items;
     if (Array.isArray(list)) items = list;
   }
+
+  if (!items.length) return [];
 
   return items
     .map((item, index) => {

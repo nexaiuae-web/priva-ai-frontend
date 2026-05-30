@@ -1,5 +1,5 @@
 import {
-  API_BASE,
+  buildApiUrl,
   buildClientHeaders,
   DOCUMENTS_API,
   loadPlanMode,
@@ -102,7 +102,7 @@ function resolveStatusPollUrl(uploadId: string, pollUrl?: string): string {
     if (pollUrl.startsWith("http://") || pollUrl.startsWith("https://")) {
       return pollUrl;
     }
-    return `${API_BASE}${pollUrl.startsWith("/") ? pollUrl : `/${pollUrl}`}`;
+    return buildApiUrl(pollUrl.startsWith("/") ? pollUrl : `/${pollUrl}`);
   }
   return `${DOCUMENTS_API}/status/${encodeURIComponent(uploadId)}`;
 }
