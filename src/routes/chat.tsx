@@ -83,16 +83,46 @@ interface ChatMessage {
 
 type Tab = "chat" | "knowledge";
 
+const CHAT_MESSAGES_STORAGE_KEY = "priva_chat_messages";
+
+const DEFAULT_WELCOME_MESSAGE: ChatMessage = {
+  role: "assistant",
+  content:
+    "Welcome. Ask a question and PRIVA AI will cite your uploaded knowledge files.",
+};
+
+function loadStoredChatMessages(): ChatMessage[] {
+  if (typeof window === "undefined") {
+    return [DEFAULT_WELCOME_MESSAGE];
+  }
+
+  try {
+    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
+    if (!raw) return [DEFAULT_WELCOME_MESSAGE];
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [DEFAULT_WELCOME_MESSAGE];
+    }
+
+    const valid = parsed.filter(
+      (item): item is ChatMessage =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        (item.role === "user" || item.role === "assistant") &&
+        typeof item.content === "string",
+    );
+
+    return valid.length > 0 ? valid : [DEFAULT_WELCOME_MESSAGE];
+  } catch {
+    return [DEFAULT_WELCOME_MESSAGE];
+  }
+}
+
 function ChatPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content:
-        "Welcome. Ask a question and PRIVA AI will cite your uploaded knowledge files.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(loadStoredChatMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
@@ -148,6 +178,15 @@ function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
+    } catch (err) {
+      console.warn("[Chat] failed to persist messages:", err);
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -733,13 +772,8 @@ function ChatPage() {
   };
 
   const handleReset = () => {
-    setMessages([
-      {
-        role: "assistant",
-        content:
-          "Welcome. Ask a question and PRIVA AI will cite your uploaded knowledge files.",
-      },
-    ]);
+    localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
+    setMessages([DEFAULT_WELCOME_MESSAGE]);
   };
 
   const handleLogout = () => {
