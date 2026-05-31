@@ -5,11 +5,13 @@ import {
   Folder,
   FolderOpen,
   GripVertical,
+  Menu,
   MessageSquare,
   Trash2,
   LogOut,
   Send,
   Upload,
+  X,
 } from "lucide-react";
 import { useKnowledgeBaseDragDrop } from "../hooks/useKnowledgeBaseDragDrop";
 import { NewFolderModal } from "../components/NewFolderModal";
@@ -119,6 +121,7 @@ function ChatPage() {
     storage_used_bytes: number;
     storage_limit_bytes: number;
   } | null>(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const token = auth?.token ?? null;
   const companyId = auth?.companyId ?? "default";
@@ -143,6 +146,15 @@ function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileNavOpen]);
 
   const currentFolder = currentFolderId
     ? folders.find((folder) => folder.id === currentFolderId) ?? null
@@ -726,7 +738,13 @@ function ChatPage() {
   const handleLogout = () => {
     clearAuthSession();
     setAuth(null);
+    setMobileNavOpen(false);
     navigate({ to: "/" });
+  };
+
+  const handleNavTab = (tab: Tab) => {
+    setActiveTab(tab);
+    setMobileNavOpen(false);
   };
 
   if (!auth) {
@@ -734,6 +752,83 @@ function ChatPage() {
   }
 
   const contentDir = isRtlLocale(locale) ? "rtl" : "ltr";
+
+  const sidebarContent = (
+    <>
+      <div className="shrink-0 p-4 lg:p-6">
+        <h2 className="text-lg font-bold text-white">AI Workspace</h2>
+        <p className="mt-1 text-xs text-[#A3B8B0]">
+          Active Company:{" "}
+          <span className="text-[#00E699]">{companyLabel}</span>
+        </p>
+        {planMode === "free_trial" && trialStatus ? (
+          <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
+            <p className="text-[10px] text-[#A3B8B0]">
+              Plan: <span className="font-semibold text-white">Free Trial</span> |{" "}
+              {trialStatus.remaining_requests}/{trialStatus.request_limit} Questions Left
+            </p>
+            <p className="mt-1 text-[10px] text-[#A3B8B0]">
+              Storage: {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
+              {(trialStatus.storage_limit_bytes / (1024 * 1024)).toFixed(1)}MB
+            </p>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+              <div
+                className="h-full rounded bg-[#00E699]"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(
+                      0,
+                      (trialStatus.storage_used_bytes / Math.max(1, trialStatus.storage_limit_bytes)) *
+                        100,
+                    ),
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-2">
+        <button
+          type="button"
+          onClick={() => handleNavTab("knowledge")}
+          className={`flex min-h-[44px] w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
+            activeTab === "knowledge"
+              ? "bg-[#054232] text-white shadow-[0_0_12px_rgba(5,66,50,0.5)]"
+              : "bg-[#041C15]/50 text-[#A3B8B0] hover:bg-[#054232]/30"
+          }`}
+        >
+          <FolderOpen size={18} />
+          KNOWLEDGE BASE
+        </button>
+        <button
+          type="button"
+          onClick={() => handleNavTab("chat")}
+          className={`flex min-h-[44px] w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
+            activeTab === "chat"
+              ? "bg-[#054232] text-white shadow-[0_0_12px_rgba(5,66,50,0.5)]"
+              : "bg-[#041C15]/50 text-[#A3B8B0] hover:bg-[#054232]/30"
+          }`}
+        >
+          <MessageSquare size={18} />
+          PRIVA AI CHAT
+        </button>
+      </div>
+
+      <div className="shrink-0 p-4">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#041C15]/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#A3B8B0] transition-all hover:bg-red-900/20 hover:text-red-400"
+        >
+          <LogOut size={16} />
+          LOGOUT
+        </button>
+      </div>
+    </>
+  );
 
   return (
     <div className="relative h-screen max-h-screen h-dvh max-h-dvh min-h-0 w-full overflow-hidden">
@@ -749,114 +844,91 @@ function ChatPage() {
       </video>
       <div className="absolute inset-0 bg-gradient-to-b from-[#041C15]/85 via-[#0B2B22]/75 to-[#041C15]/90" />
 
-      {/* App shell: viewport-locked — sidebar static, chat scrolls internally */}
+      {/* App shell: stacks on mobile, side-by-side on desktop */}
       <div
-        className="relative z-10 flex h-full max-h-full w-full flex-row overflow-hidden"
+        className="relative z-10 flex h-full max-h-full w-full min-w-0 flex-col overflow-hidden lg:flex-row"
         dir="ltr"
       >
-      {/* Sidebar — full viewport height, logout anchored at bottom */}
-      <aside
-        className="relative z-10 order-1 flex h-full max-h-full min-h-0 w-72 shrink-0 flex-col border-r border-[#00E699]/10 backdrop-blur-md"
-        style={{ background: "rgba(4, 28, 21, 0.55)" }}
-      >
-        {/* Header */}
-        <div className="shrink-0 p-6">
-          <h2 className="text-lg font-bold text-white">AI Workspace</h2>
-          <p className="mt-1 text-xs text-[#A3B8B0]">
-            Active Company:{" "}
-            <span className="text-[#00E699]">{companyLabel}</span>
-          </p>
-          {planMode === "free_trial" && trialStatus ? (
-            <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
-              <p className="text-[10px] text-[#A3B8B0]">
-                Plan: <span className="font-semibold text-white">Free Trial</span> |{" "}
-                {trialStatus.remaining_requests}/{trialStatus.request_limit} Questions Left
-              </p>
-              <p className="mt-1 text-[10px] text-[#A3B8B0]">
-                Storage: {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
-                {(trialStatus.storage_limit_bytes / (1024 * 1024)).toFixed(1)}MB
-              </p>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
-                <div
-                  className="h-full rounded bg-[#00E699]"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.max(
-                        0,
-                        (trialStatus.storage_used_bytes / Math.max(1, trialStatus.storage_limit_bytes)) *
-                          100,
-                      ),
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-          ) : null}
-        </div>
+        {mobileNavOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
+            aria-label="Close navigation menu"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        ) : null}
 
-        {/* Nav buttons */}
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4">
-          <button
-            onClick={() => setActiveTab("knowledge")}
-            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-              activeTab === "knowledge"
-                ? "bg-[#054232] text-white shadow-[0_0_12px_rgba(5,66,50,0.5)]"
-                : "bg-[#041C15]/50 text-[#A3B8B0] hover:bg-[#054232]/30"
-            }`}
-          >
-            <FolderOpen size={18} />
-            KNOWLEDGE BASE
-          </button>
-          <button
-            onClick={() => setActiveTab("chat")}
-            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all ${
-              activeTab === "chat"
-                ? "bg-[#054232] text-white shadow-[0_0_12px_rgba(5,66,50,0.5)]"
-                : "bg-[#041C15]/50 text-[#A3B8B0] hover:bg-[#054232]/30"
-            }`}
-          >
-            <MessageSquare size={18} />
-            PRIVA AI CHAT
-          </button>
-        </div>
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-[min(100vw-3rem,20rem)] max-w-full flex-col border-r border-[#00E699]/10 backdrop-blur-md transition-transform duration-300 ease-in-out lg:hidden ${
+            mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+          style={{ background: "rgba(4, 28, 21, 0.95)" }}
+          aria-hidden={!mobileNavOpen}
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-[#00E699]/10 px-4 py-3">
+            <p className="text-sm font-semibold text-white">Navigation</p>
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
+              aria-label="Close navigation menu"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          {sidebarContent}
+        </aside>
 
-        {/* Logout — pinned to bottom of sidebar */}
-        <div className="shrink-0 p-4">
-          <button
-            onClick={handleLogout}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#041C15]/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#A3B8B0] transition-all hover:bg-red-900/20 hover:text-red-400"
-          >
-            <LogOut size={16} />
-            LOGOUT
-          </button>
-        </div>
-      </aside>
+        <aside
+          className="relative z-10 hidden h-full max-h-full min-h-0 w-64 shrink-0 flex-col border-r border-[#00E699]/10 backdrop-blur-md lg:flex xl:w-72"
+          style={{ background: "rgba(4, 28, 21, 0.55)" }}
+        >
+          {sidebarContent}
+        </aside>
 
       {/* Main workspace — RTL/LTR for text only; scroll contained here */}
       <main
-        className="relative z-10 order-2 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        className="relative z-10 flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
         dir={contentDir}
       >
+        <div className="flex shrink-0 items-center gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm lg:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
+            aria-label="Open navigation menu"
+            aria-expanded={mobileNavOpen}
+          >
+            <Menu size={20} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white">
+              {activeTab === "chat" ? "PRIVA AI Chat" : "Knowledge Base"}
+            </p>
+            <p className="truncate text-xs text-[#A3B8B0]">{companyLabel}</p>
+          </div>
+        </div>
         {activeTab === "chat" ? (
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
             {/* Chat header */}
-            <div className="flex shrink-0 items-center justify-between border-b border-[#00E699]/10 px-6 py-4 backdrop-blur-sm">
-              <h3 className="text-base font-semibold text-white">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:px-6 sm:py-4">
+              <h3 className="text-sm font-semibold text-white sm:text-base">
                 PRIVA AI Chat
               </h3>
               <button
+                type="button"
                 onClick={handleReset}
-                className="flex items-center gap-2 rounded-lg bg-[#041C15]/60 px-3 py-1.5 text-xs font-medium text-[#A3B8B0] transition-all hover:bg-[#00E699]/10 hover:text-[#00E699]"
+                className="flex min-h-[40px] items-center gap-2 rounded-lg bg-[#041C15]/60 px-3 py-2 text-xs font-medium text-[#A3B8B0] transition-all hover:bg-[#00E699]/10 hover:text-[#00E699]"
               >
                 <Trash2 size={14} />
-                Reset Discussion
+                <span className="hidden sm:inline">Reset Discussion</span>
+                <span className="sm:hidden">Reset</span>
               </button>
             </div>
 
             {/* Messages feed — only this region scrolls vertically */}
             <div
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-6"
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4 sm:p-6"
               dir={contentDir}
             >
               {messages.map((msg, idx) => {
@@ -944,14 +1016,14 @@ function ChatPage() {
             </div>
 
             {/* Input area */}
-            <div className="shrink-0 border-t border-[#00E699]/10 p-4 backdrop-blur-sm">
+            <div className="shrink-0 border-t border-[#00E699]/10 p-3 backdrop-blur-sm sm:p-4">
               {currentFolder ? (
                 <p className="mb-2 text-xs text-[#00E699]/90">
                   Chat scoped to folder:{" "}
                   <span className="font-semibold text-white">{currentFolder.name}</span>
                 </p>
               ) : null}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -961,12 +1033,13 @@ function ChatPage() {
                       ? `Ask about files in "${currentFolder.name}"…`
                       : "Ask using your knowledge base…"
                   }
-                  className="flex-1 rounded-xl border border-[#00E699]/20 bg-[#041C15]/50 px-4 py-3 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699]/50 focus:ring-1 focus:ring-[#00E699]/30"
+                  className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-[#00E699]/20 bg-[#041C15]/50 px-4 py-3 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699]/50 focus:ring-1 focus:ring-[#00E699]/30"
                 />
                 <button
+                  type="button"
                   onClick={handleSend}
                   disabled={isLoading || !input.trim()}
-                  className="flex items-center gap-2 rounded-xl px-5 py-3 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-40"
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-40 sm:w-auto"
                   style={{
                     background: "#054232",
                     boxShadow: "0 0 12px rgba(5, 66, 50, 0.5)",
@@ -981,9 +1054,9 @@ function ChatPage() {
         ) : (
           /* Knowledge base panel */
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#00E699]/10 px-6 py-4 backdrop-blur-sm">
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold text-white">
+            <div className="flex shrink-0 flex-col gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-4">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-white sm:text-base">
                   Knowledge Base
                 </h3>
                 <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-[#A3B8B0]">
@@ -1028,21 +1101,22 @@ function ChatPage() {
                     : ""}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                 <button
                   type="button"
                   onClick={() => setFolderModalOpen(true)}
                   disabled={docsUploading || Boolean(currentFolderId)}
-                  className="flex items-center gap-2 rounded-lg border border-[#00E699]/25 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#00E699] transition-all hover:bg-[#054232]/40 disabled:opacity-40"
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-[#00E699]/25 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#00E699] transition-all hover:bg-[#054232]/40 disabled:opacity-40 sm:w-auto"
                   title={currentFolderId ? "Create folders from the root view" : undefined}
                 >
                   <Folder size={14} />
                   New Folder
                 </button>
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={docsUploading}
-                  className="flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-50"
+                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-50 sm:w-auto"
                   style={{
                     background: "#054232",
                     boxShadow: "0 0 12px rgba(5, 66, 50, 0.4)",
@@ -1069,7 +1143,7 @@ function ChatPage() {
               />
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
               {draggingDocId && !currentFolderId ? (
                 <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
                   Drag a file onto a folder to move it.
@@ -1123,14 +1197,11 @@ function ChatPage() {
               ) : (
                 <div className="space-y-4">
                   {!currentFolderId && folders.length > 0 ? (
-                    <div
-                      className="overflow-hidden rounded-2xl border border-[#00E699]/15 backdrop-blur-md"
-                      style={{ background: "rgba(4, 28, 21, 0.55)" }}
-                    >
-                      <div className="border-b border-[#00E699]/10 bg-[#054232]/40 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
+                    <div>
+                      <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
                         Folders
                       </div>
-                      <ul className="divide-y divide-[#00E699]/10">
+                      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {folders.map((folder) => (
                           <li
                             key={folder.id}
@@ -1138,7 +1209,8 @@ function ChatPage() {
                             onDragOver={handleDragOver(folder.id)}
                             onDragLeave={handleDragLeave(folder.id)}
                             onDrop={handleDropOnTarget(folder.id)}
-                            className={`transition-colors ${dropHighlightClass(folder.id)}`}
+                            className={`overflow-hidden rounded-2xl border border-[#00E699]/15 backdrop-blur-md transition-colors ${dropHighlightClass(folder.id)}`}
+                            style={{ background: "rgba(4, 28, 21, 0.55)" }}
                           >
                             <button
                               type="button"
@@ -1146,9 +1218,9 @@ function ChatPage() {
                                 if (draggingDocId || movingDocId) return;
                                 openFolder(folder.id);
                               }}
-                              className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-[#054232]/25"
+                              className="flex min-h-[88px] w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-[#054232]/25"
                             >
-                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
                                 <Folder size={18} className="text-[#00E699]" />
                               </span>
                               <div className="min-w-0 flex-1">
@@ -1161,7 +1233,7 @@ function ChatPage() {
                                     : "Open folder"}
                                 </p>
                               </div>
-                              <ChevronRight size={16} className="text-[#00E699]/70" />
+                              <ChevronRight size={16} className="shrink-0 text-[#00E699]/70" />
                             </button>
                           </li>
                         ))}
@@ -1170,65 +1242,59 @@ function ChatPage() {
                   ) : null}
 
                   {docs.length > 0 ? (
-                <div
-                  className="overflow-hidden rounded-2xl border border-[#00E699]/15 backdrop-blur-md"
-                  style={{ background: "rgba(4, 28, 21, 0.55)" }}
-                >
-                  <div className="grid grid-cols-[auto_1fr_auto_auto] gap-4 border-b border-[#00E699]/10 bg-[#054232]/40 px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
-                    <span className="w-6" aria-hidden />
-                    <span>File name</span>
-                    <span className="hidden sm:block">Uploaded</span>
-                    <span className="text-right">Action</span>
-                  </div>
-                  <ul className="divide-y divide-[#00E699]/10">
-                    {docs.map((doc) => (
-                      <li
-                        key={doc.id}
-                        draggable={!docsUploading && movingDocId !== doc.id}
-                        onDragStart={handleDragStart(doc.id)}
-                        onDragEnd={handleDragEnd}
-                        onTouchStart={handleTouchStart(doc.id)}
-                        className={`grid grid-cols-[auto_1fr_auto_auto] items-center gap-4 px-5 py-4 transition-colors hover:bg-[#054232]/25 sm:grid-cols-[auto_1fr_auto_auto] ${
-                          draggingDocId === doc.id ? "opacity-50" : ""
-                        } ${movingDocId === doc.id ? "pointer-events-none opacity-40" : "cursor-grab active:cursor-grabbing"}`}
-                        title="Drag to a folder to move"
-                      >
-                        <span
-                          className="flex h-9 w-6 shrink-0 items-center justify-center text-[#00E699]/50"
-                          aria-hidden
-                        >
-                          <GripVertical size={14} />
-                        </span>
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
-                            <FolderOpen size={16} className="text-[#00E699]" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-white">
-                              {doc.filename}
-                            </p>
-                            <p className="mt-0.5 text-xs text-[#A3B8B0] sm:hidden">
-                              {formatDocumentDate(doc.uploadedAt)}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="hidden whitespace-nowrap text-xs text-[#A3B8B0] sm:block">
-                          {formatDocumentDate(doc.uploadedAt)}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteDoc(doc.id)}
-                          onTouchStart={(e) => e.stopPropagation()}
-                          className="justify-self-end rounded-lg border border-transparent px-3 py-2 text-base transition-all hover:border-red-500/30 hover:bg-red-900/25"
-                          aria-label={`Delete ${doc.filename}`}
-                          title="Delete document"
-                        >
-                          🗑️
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                    <div>
+                      <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
+                        Documents
+                      </div>
+                      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {docs.map((doc) => (
+                          <li
+                            key={doc.id}
+                            draggable={!docsUploading && movingDocId !== doc.id}
+                            onDragStart={handleDragStart(doc.id)}
+                            onDragEnd={handleDragEnd}
+                            onTouchStart={handleTouchStart(doc.id)}
+                            className={`flex min-h-[120px] flex-col rounded-2xl border border-[#00E699]/15 p-4 backdrop-blur-md transition-colors hover:bg-[#054232]/20 ${
+                              draggingDocId === doc.id ? "opacity-50" : ""
+                            } ${movingDocId === doc.id ? "pointer-events-none opacity-40" : "cursor-grab active:cursor-grabbing"}`}
+                            style={{ background: "rgba(4, 28, 21, 0.55)" }}
+                            title="Drag to a folder to move"
+                          >
+                            <div className="flex min-w-0 flex-1 items-start gap-3">
+                              <span
+                                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[#00E699]/50"
+                                aria-hidden
+                              >
+                                <GripVertical size={14} />
+                              </span>
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
+                                <FolderOpen size={16} className="text-[#00E699]" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-2 text-sm font-medium text-white">
+                                  {doc.filename}
+                                </p>
+                                <p className="mt-1 text-xs text-[#A3B8B0]">
+                                  {formatDocumentDate(doc.uploadedAt)}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex justify-end border-t border-[#00E699]/10 pt-3">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDoc(doc.id)}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-transparent px-3 py-2 text-base transition-all hover:border-red-500/30 hover:bg-red-900/25"
+                                aria-label={`Delete ${doc.filename}`}
+                                title="Delete document"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
                 </div>
               )}
