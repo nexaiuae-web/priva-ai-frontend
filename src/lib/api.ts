@@ -417,25 +417,31 @@ export async function moveDocumentToFolder(
 }
 
 export function normalizeDocuments(payload: unknown): DocumentRecord[] {
-  let items: unknown[] = [];
-
   if (Array.isArray(payload)) {
-    items = payload;
-  } else if (payload && typeof payload === "object") {
-    const root = payload as Record<string, unknown>;
-    const candidates = [
-      root.documents,
-      root.data,
-      root.files,
-      root.items,
-    ].filter(Array.isArray) as unknown[][];
-    if (candidates.length) {
-      items = candidates.flat();
-    }
+    return mapDocumentRecords(payload);
   }
 
+  const data =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
+
+  const fromDocuments = data?.documents;
+  const fromFiles = data?.files;
+  const docs =
+    (Array.isArray(fromDocuments) && fromDocuments.length > 0
+      ? fromDocuments
+      : null) ??
+    (Array.isArray(fromFiles) ? fromFiles : null) ??
+    [];
+
+  const items = Array.isArray(docs) ? docs : [];
   if (!items.length) return [];
 
+  return mapDocumentRecords(items);
+}
+
+function mapDocumentRecords(items: unknown[]): DocumentRecord[] {
   return items
     .map((item, index) => {
       if (!item || typeof item !== "object") return null;

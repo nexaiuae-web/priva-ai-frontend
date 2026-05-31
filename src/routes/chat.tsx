@@ -41,9 +41,6 @@ import {
   type PlanMode,
   loadPlanMode,
   fetchTrialStatus,
-  formatKnowledgeBaseLoadError,
-  isMiddlewareNextError,
-  parseApiErrorPayload,
   STORAGE_LIMIT_MESSAGE,
   TRIAL_LIMIT_MESSAGE,
   TRIAL_STORAGE_MESSAGE,
@@ -182,7 +179,6 @@ function ChatPage() {
 
   const fetchDocs = async (folderId: string | null = currentFolderId) => {
     setDocsLoading(true);
-    setDocsError("");
     if (!token) {
       setDocs([]);
       setDocsLoading(false);
@@ -194,33 +190,26 @@ function ChatPage() {
         headers = await buildClientHeaders({ token, planMode });
       } catch (headerErr) {
         console.warn("[KB] client headers failed:", headerErr);
-        setDocs([]);
-        setDocsError(formatKnowledgeBaseLoadError(headerErr));
         return;
       }
 
       const res = await fetch(buildDocumentsUrl(folderId), {
         headers,
       });
+      const data = await res.json().catch(() => ({}));
+      const normalized = normalizeDocuments(data);
+
       if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setDocs(normalizeDocuments(data));
+        setDocs(normalized);
         return;
       }
 
-      const raw = await res.text().catch(() => "");
-      const parsed = parseApiErrorPayload(raw);
-      setDocs([]);
-      const apiMessage = parsed.message || parsed.error || "";
-      setDocsError(
-        isMiddlewareNextError(apiMessage)
-          ? "Could not load documents. Please refresh the page."
-          : apiMessage || `Could not load documents (${res.status}).`,
-      );
+      console.warn("[KB] documents request failed:", res.status, data);
+      if (normalized.length > 0) {
+        setDocs(normalized);
+      }
     } catch (err) {
       console.warn("[KB] documents load failed:", err);
-      setDocs([]);
-      setDocsError(formatKnowledgeBaseLoadError(err));
     } finally {
       setDocsLoading(false);
     }
@@ -231,8 +220,6 @@ function ChatPage() {
       await Promise.all([fetchFoldersList(), fetchDocs(folderId)]);
     } catch (err) {
       console.warn("[KB] refresh failed:", err);
-      setDocs([]);
-      setDocsError(formatKnowledgeBaseLoadError(err));
     }
   };
 
@@ -1175,11 +1162,6 @@ function ChatPage() {
                   into another folder.
                 </p>
               ) : null}
-              {docsError && (
-                <p className="mb-4 rounded-xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-300 backdrop-blur-sm">
-                  {docsError}
-                </p>
-              )}
 
               {docsLoading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-[#A3B8B0]">
