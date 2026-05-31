@@ -1,25 +1,9 @@
-import { createStart, createMiddleware } from "@tanstack/react-start";
+import { createStart } from "@tanstack/react-start";
 
-import { renderErrorPage } from "./lib/error-page";
-
-const errorMiddleware = createMiddleware().server(async (ctx) => {
-  try {
-    if (typeof ctx.next !== "function") {
-      return;
-    }
-    return await ctx.next();
-  } catch (error) {
-    if (error != null && typeof error === "object" && "statusCode" in error) {
-      throw error;
-    }
-    console.error(error);
-    return new Response(renderErrorPage(), {
-      status: 500,
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
-  }
-});
-
+// Avoid custom requestMiddleware here. TanStack Start injects `next` on the
+// middleware context during SSR; a mis-invoked `next()` breaks `/chat` and the
+// Knowledge Base grid (especially for Free Trial). Global SSR errors are handled
+// in `src/server.ts` instead.
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorMiddleware],
+  defaultSsr: false,
 }));

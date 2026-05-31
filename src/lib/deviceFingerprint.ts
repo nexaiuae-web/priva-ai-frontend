@@ -13,6 +13,7 @@ function simpleHash(input: string): string {
 }
 
 function canvasFingerprint(): string {
+  if (typeof document === "undefined") return "nodocument";
   try {
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
@@ -31,6 +32,9 @@ function canvasFingerprint(): string {
 }
 
 function collectFingerprintEntropy(): string {
+  if (typeof navigator === "undefined" || typeof window === "undefined") {
+    return "ssr-anonymous-device";
+  }
   const nav = navigator;
   const scr = window.screen;
   const parts = [
@@ -58,8 +62,15 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
+function canUseBrowserStorage(): boolean {
+  return typeof window !== "undefined" && typeof localStorage !== "undefined";
+}
+
 export async function getDeviceFingerprint(): Promise<string> {
   if (cachedFingerprint) return cachedFingerprint;
+  if (!canUseBrowserStorage()) {
+    return "ssr-anonymous-device";
+  }
   const stored = localStorage.getItem(DEVICE_FINGERPRINT_KEY);
   if (stored && stored.trim()) {
     cachedFingerprint = stored.trim();

@@ -41,6 +41,8 @@ import {
   type PlanMode,
   loadPlanMode,
   fetchTrialStatus,
+  formatKnowledgeBaseLoadError,
+  isMiddlewareNextError,
   parseApiErrorPayload,
   STORAGE_LIMIT_MESSAGE,
   TRIAL_LIMIT_MESSAGE,
@@ -73,6 +75,7 @@ import { UploadSseError, type UploadProgressState } from "../lib/upload-sse";
 
 export const Route = createFileRoute("/chat")({
   component: ChatPage,
+  ssr: false,
 });
 
 interface ChatMessage {
@@ -123,6 +126,9 @@ function ChatPage() {
   } | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  const safeDocs = Array.isArray(docs) ? docs : [];
+  const safeFolders = Array.isArray(folders) ? folders : [];
+
   const token = auth?.token ?? null;
   const companyId = auth?.companyId ?? "default";
   const companyLabel = planMode === "free_trial" ? "Free Trial" : auth?.companyName ?? companyId;
@@ -157,7 +163,7 @@ function ChatPage() {
   }, [mobileNavOpen]);
 
   const currentFolder = currentFolderId
-    ? folders.find((folder) => folder.id === currentFolderId) ?? null
+    ? safeFolders.find((folder) => folder.id === currentFolderId) ?? null
     : null;
 
   const fetchFoldersList = async () => {
@@ -183,7 +189,16 @@ function ChatPage() {
       return;
     }
     try {
-      const headers = await buildClientHeaders({ token, planMode });
+      let headers: Record<string, string>;
+      try {
+        headers = await buildClientHeaders({ token, planMode });
+      } catch (headerErr) {
+        console.warn("[KB] client headers failed:", headerErr);
+        setDocs([]);
+        setDocsError(formatKnowledgeBaseLoadError(headerErr));
+        return;
+      }
+
       const res = await fetch(buildDocumentsUrl(folderId), {
         headers,
       });
@@ -196,20 +211,16 @@ function ChatPage() {
       const raw = await res.text().catch(() => "");
       const parsed = parseApiErrorPayload(raw);
       setDocs([]);
+      const apiMessage = parsed.message || parsed.error || "";
       setDocsError(
-        parsed.message ||
-          parsed.error ||
-          `Could not load documents (${res.status}).`,
+        isMiddlewareNextError(apiMessage)
+          ? "Could not load documents. Please refresh the page."
+          : apiMessage || `Could not load documents (${res.status}).`,
       );
     } catch (err) {
+      console.warn("[KB] documents load failed:", err);
       setDocs([]);
-      setDocsError(
-        isBackendUnreachableError(err)
-          ? "Cannot reach the document API. Check your backend connection."
-          : err instanceof Error
-            ? err.message
-            : "Failed to load documents.",
-      );
+      setDocsError(formatKnowledgeBaseLoadError(err));
     } finally {
       setDocsLoading(false);
     }
@@ -221,9 +232,7 @@ function ChatPage() {
     } catch (err) {
       console.warn("[KB] refresh failed:", err);
       setDocs([]);
-      setDocsError(
-        err instanceof Error ? err.message : "Failed to refresh knowledge base.",
-      );
+      setDocsError(formatKnowledgeBaseLoadError(err));
     }
   };
 
@@ -241,8 +250,19 @@ function ChatPage() {
     void (async () => {
       try {
         const status = await fetchTrialStatus({ token, planMode });
-        setTrialStatus(status.trial);
-      } catch {
+        const trial = status?.trial;
+        if (!trial || typeof trial !== "object") {
+          setTrialStatus(null);
+          return;
+        }
+        setTrialStatus({
+          remaining_requests: Number(trial.remaining_requests) || 0,
+          request_limit: Number(trial.request_limit) || 5,
+          storage_used_bytes: Number(trial.storage_used_bytes) || 0,
+          storage_limit_bytes: Number(trial.storage_limit_bytes) || 5 * 1024 * 1024,
+        });
+      } catch (err) {
+        console.warn("[KB] trial status load failed:", err);
         setTrialStatus(null);
       }
     })();
@@ -1095,9 +1115,9 @@ function ChatPage() {
                   ) : null}
                 </div>
                 <p className="mt-0.5 text-xs text-[#A3B8B0]">
-                  {docs.length} document{docs.length === 1 ? "" : "s"} in this view
-                  {!currentFolderId && folders.length > 0
-                    ? ` · ${folders.length} folder${folders.length === 1 ? "" : "s"}`
+                  {safeDocs.length} document{safeDocs.length === 1 ? "" : "s"} in this view
+                  {!currentFolderId && safeFolders.length > 0
+                    ? ` · ${safeFolders.length} folder${safeFolders.length === 1 ? "" : "s"}`
                     : ""}
                 </p>
               </div>
@@ -1166,7 +1186,7 @@ function ChatPage() {
                   <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]" />
                   Loading documents...
                 </div>
-              ) : !currentFolderId && folders.length === 0 && docs.length === 0 ? (
+              ) : !currentFolderId && safeFolders.length === 0 && safeDocs.length === 0 ? (
                 <div
                   className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm"
                 >
@@ -1181,7 +1201,7 @@ function ChatPage() {
                     Create a folder or upload a file to build your knowledge base.
                   </p>
                 </div>
-              ) : currentFolderId && docs.length === 0 ? (
+              ) : currentFolderId && safeDocs.length === 0 ? (
                 <div
                   className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm"
                 >
@@ -1196,13 +1216,13 @@ function ChatPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {!currentFolderId && folders.length > 0 ? (
+                  {!currentFolderId && safeFolders.length > 0 ? (
                     <div>
                       <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
                         Folders
                       </div>
                       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {folders.map((folder) => (
+                        {safeFolders.map((folder) => (
                           <li
                             key={folder.id}
                             data-folder-drop-id={folder.id}
@@ -1241,13 +1261,13 @@ function ChatPage() {
                     </div>
                   ) : null}
 
-                  {docs.length > 0 ? (
+                  {safeDocs.length > 0 ? (
                     <div>
                       <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
                         Documents
                       </div>
                       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {docs.map((doc) => (
+                        {safeDocs.map((doc) => (
                           <li
                             key={doc.id}
                             draggable={!docsUploading && movingDocId !== doc.id}

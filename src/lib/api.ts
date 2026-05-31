@@ -423,8 +423,15 @@ export function normalizeDocuments(payload: unknown): DocumentRecord[] {
     items = payload;
   } else if (payload && typeof payload === "object") {
     const root = payload as Record<string, unknown>;
-    const list = root.documents ?? root.data ?? root.files ?? root.items;
-    if (Array.isArray(list)) items = list;
+    const candidates = [
+      root.documents,
+      root.data,
+      root.files,
+      root.items,
+    ].filter(Array.isArray) as unknown[][];
+    if (candidates.length) {
+      items = candidates.flat();
+    }
   }
 
   if (!items.length) return [];
@@ -465,6 +472,25 @@ export function formatDocumentDate(iso: string): string {
 
 export function isBackendUnreachableError(err: unknown): boolean {
   return err instanceof TypeError;
+}
+
+const MIDDLEWARE_NEXT_ERROR = /next is not a function/i;
+
+export function isMiddlewareNextError(message: string): boolean {
+  return MIDDLEWARE_NEXT_ERROR.test(message);
+}
+
+export function formatKnowledgeBaseLoadError(err: unknown): string {
+  if (isBackendUnreachableError(err)) {
+    return "Cannot reach the document API. Check your backend connection.";
+  }
+  if (err instanceof Error) {
+    if (MIDDLEWARE_NEXT_ERROR.test(err.message)) {
+      return "Could not load documents. Please refresh the page.";
+    }
+    if (err.message.trim()) return err.message;
+  }
+  return "Failed to load documents.";
 }
 
 export function extractStreamContent(parsed: unknown): string | null {
