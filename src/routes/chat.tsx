@@ -43,8 +43,8 @@ import {
   loadPlanMode,
   fetchTrialStatus,
   fetchStorageQuotaSnapshot,
+  getStorageQuotaExceededMessage,
   resolveUploadErrorMessage,
-  STORAGE_QUOTA_EXCEEDED_AR,
   TRIAL_LIMIT_MESSAGE,
   wouldExceedStorageQuota,
 } from "../lib/api";
@@ -162,9 +162,16 @@ function ChatPage() {
   const companyId = auth?.companyId ?? "default";
   const companyLabel = planMode === "free_trial" ? "Free Trial" : auth?.companyName ?? companyId;
 
-  const showUploadErrorToast = (message: string) => {
-    toast.error(message, { duration: 6000 });
-  };
+  const showStorageQuotaToast = useCallback(() => {
+    toast.error(getStorageQuotaExceededMessage(locale), { duration: 6000 });
+  }, [locale]);
+
+  const showUploadErrorToast = useCallback(
+    (err: unknown) => {
+      toast.error(resolveUploadErrorMessage(err, locale), { duration: 6000 });
+    },
+    [locale],
+  );
 
   useEffect(() => {
     const session = loadAuthSession();
@@ -328,7 +335,7 @@ function ChatPage() {
         setDocsUploading(false);
         activeUploadIdRef.current = null;
         setUploadProgress(null);
-        showUploadErrorToast(resolveUploadErrorMessage(err));
+        showUploadErrorToast(err);
       },
     });
 
@@ -622,7 +629,7 @@ function ChatPage() {
       quota &&
       wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)
     ) {
-      showUploadErrorToast(STORAGE_QUOTA_EXCEEDED_AR);
+      showStorageQuotaToast();
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -676,7 +683,7 @@ function ChatPage() {
     } catch (err) {
       activeUploadIdRef.current = null;
       setUploadProgress(null);
-      showUploadErrorToast(resolveUploadErrorMessage(err));
+      showUploadErrorToast(err);
     } finally {
       activeUploadIdRef.current = null;
       setDocsUploading(false);

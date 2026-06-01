@@ -1,4 +1,6 @@
 import { getDeviceFingerprint } from "./deviceFingerprint";
+import type { AppLocale } from "./locale";
+import { resolveAppLocale } from "./locale";
 
 const PRODUCTION_API_URL = "https://priva-ai-api.onrender.com";
 
@@ -45,6 +47,14 @@ export const DEFAULT_TRIAL_STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
 
 export const STORAGE_QUOTA_EXCEEDED_AR =
   "خطأ: حجم الملف يتجاوز المساحة المتبقية المتاحة لحسابك (الحد الأقصى 5 ميجابايت)";
+
+export const STORAGE_QUOTA_EXCEEDED_EN =
+  "Error: File size exceeds the remaining storage quota for your account (Max 5MB)";
+
+export function getStorageQuotaExceededMessage(locale?: AppLocale): string {
+  const activeLocale = locale ?? resolveAppLocale();
+  return activeLocale === "ar" ? STORAGE_QUOTA_EXCEEDED_AR : STORAGE_QUOTA_EXCEEDED_EN;
+}
 
 const STORAGE_LIMIT_ERROR_CODES = new Set([
   "STORAGE_LIMIT_REACHED",
@@ -94,33 +104,44 @@ export function isStorageLimitApiPayload(parsed: {
 
 export function resolveStorageLimitMessage(
   parsed: { error?: string; code?: string; message?: string },
-  fallback = STORAGE_QUOTA_EXCEEDED_AR,
+  locale?: AppLocale,
 ): string {
   if (parsed.message?.trim()) return parsed.message.trim();
   const code = parsed.error || parsed.code;
   if (code === "USER_STORAGE_LIMIT_REACHED") return USER_STORAGE_LIMIT_MESSAGE;
   if (code === "TRIAL_STORAGE_EXCEEDED") return TRIAL_STORAGE_MESSAGE;
   if (code === "STORAGE_LIMIT_REACHED") return STORAGE_LIMIT_MESSAGE;
-  return fallback;
+  return getStorageQuotaExceededMessage(locale);
 }
 
 export function createStorageLimitError(
   parsed: { error?: string; code?: string; message?: string },
-  fallback = STORAGE_QUOTA_EXCEEDED_AR,
+  locale?: AppLocale,
 ): Error {
   const code = parsed.error || parsed.code || "STORAGE_LIMIT_REACHED";
-  const err = new Error(resolveStorageLimitMessage(parsed, fallback));
+  const err = new Error(resolveStorageLimitMessage(parsed, locale));
   (err as Error & { code?: string }).code = code;
   return err;
 }
 
-export function resolveUploadErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return "Upload failed. Please try again.";
+export function resolveUploadErrorMessage(err: unknown, locale?: AppLocale): string {
+  const quotaMessage = getStorageQuotaExceededMessage(locale);
+  const uploadFailedMessage = locale === "ar"
+    ? "فشل الرفع. يرجى المحاولة مرة أخرى."
+    : "Upload failed. Please try again.";
+
+  if (!(err instanceof Error)) return uploadFailedMessage;
   if (isStorageLimitErrorCode(err.code)) {
-    return err.message.trim() || STORAGE_QUOTA_EXCEEDED_AR;
+    if (err.message.trim() === STORAGE_QUOTA_EXCEEDED_AR && locale === "en") {
+      return STORAGE_QUOTA_EXCEEDED_EN;
+    }
+    if (err.message.trim() === STORAGE_QUOTA_EXCEEDED_EN && locale === "ar") {
+      return STORAGE_QUOTA_EXCEEDED_AR;
+    }
+    return err.message.trim() || quotaMessage;
   }
   if (err.message.trim()) return err.message.trim();
-  return "Upload failed. Please try again.";
+  return uploadFailedMessage;
 }
 
 export async function fetchStorageQuotaSnapshot({

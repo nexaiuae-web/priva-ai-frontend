@@ -7,12 +7,11 @@ import {
   isStorageLimitHttpStatus,
   loadPlanMode,
   parseApiErrorPayload,
-  resolveStorageLimitMessage,
   STORAGE_LIMIT_MESSAGE,
-  STORAGE_QUOTA_EXCEEDED_AR,
   TRIAL_STORAGE_MESSAGE,
   USER_STORAGE_LIMIT_MESSAGE,
 } from "./api";
+import { resolveAppLocale } from "./locale";
 import type { UploadProgressState } from "./upload-sse";
 
 const PENDING_UPLOADS_KEY = "priva_pending_uploads";
@@ -388,7 +387,7 @@ export async function uploadDocumentInBackground(
   if (!res.ok) {
     const parsed = parseApiErrorPayload(raw);
     if (isStorageLimitHttpStatus(res.status) || isStorageLimitApiPayload(parsed)) {
-      throw createStorageLimitError(parsed, STORAGE_QUOTA_EXCEEDED_AR);
+      throw createStorageLimitError(parsed, resolveAppLocale());
     }
     throw new Error(
       parsed.message || body.message || `Upload failed (${res.status}).`,
