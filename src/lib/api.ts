@@ -1,4 +1,7 @@
 import { getDeviceFingerprint } from "./deviceFingerprint";
+import { clearWorkspaceClientState } from "./chatSessionStorage";
+
+export { clearWorkspaceClientState } from "./chatSessionStorage";
 import type { AppLocale } from "./locale";
 import { resolveAppLocale } from "./locale";
 
@@ -405,6 +408,39 @@ export function clearAuthSession(): void {
     localStorage.removeItem(key);
   });
   sessionStorage.removeItem(FACE_VERIFIED_KEY);
+  clearWorkspaceClientState();
+}
+
+export interface ChatHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  sources?: unknown[];
+}
+
+export async function fetchChatHistory({
+  token,
+  planMode = "premium",
+}: {
+  token: string;
+  planMode?: PlanMode;
+}): Promise<{ company_id: string; messages: ChatHistoryMessage[] }> {
+  const headers = await buildClientHeaders({ token, planMode });
+  const res = await fetch(buildApiUrl("/api/chat/history"), { headers });
+  const body = (await res.json().catch(() => ({}))) as {
+    company_id?: string;
+    messages?: ChatHistoryMessage[];
+    error?: string;
+  };
+
+  if (!res.ok) {
+    throw new Error(body.error || `Failed to load chat history (${res.status})`);
+  }
+
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  return {
+    company_id: String(body.company_id || ""),
+    messages,
+  };
 }
 
 export function setFaceVerifiedForToken(token: string): void {

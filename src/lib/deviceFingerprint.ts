@@ -66,7 +66,7 @@ function canUseBrowserStorage(): boolean {
   return typeof window !== "undefined" && typeof localStorage !== "undefined";
 }
 
-export async function getDeviceFingerprint(): Promise<string> {
+export function getCachedDeviceFingerprint(): string {
   if (cachedFingerprint) return cachedFingerprint;
   if (!canUseBrowserStorage()) {
     return "ssr-anonymous-device";
@@ -75,6 +75,15 @@ export async function getDeviceFingerprint(): Promise<string> {
   if (stored && stored.trim()) {
     cachedFingerprint = stored.trim();
     return cachedFingerprint;
+  }
+  return "";
+}
+
+export async function getDeviceFingerprint(): Promise<string> {
+  const existing = getCachedDeviceFingerprint();
+  if (existing) return existing;
+  if (!canUseBrowserStorage()) {
+    return "ssr-anonymous-device";
   }
 
   const entropy = collectFingerprintEntropy();

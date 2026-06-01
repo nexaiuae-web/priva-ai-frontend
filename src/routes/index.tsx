@@ -4,11 +4,13 @@ import {
   API_BASE,
   buildClientHeaders,
   clearAuthSession,
+  clearWorkspaceClientState,
   isBackendUnreachableError,
   persistPlanMode,
   persistAuthSession,
   setFaceVerifiedForToken,
 } from "../lib/api";
+import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
 export const Route = createFileRoute("/")({
   component: LoginPage,
@@ -29,6 +31,7 @@ function LoginPage() {
 
     try {
       persistPlanMode("premium");
+      clearWorkspaceClientState();
       const res = await fetch(`${API_BASE}/api/login`, {
         method: "POST",
         headers: await buildClientHeaders({
@@ -78,6 +81,8 @@ function LoginPage() {
     try {
       persistPlanMode("free_trial");
       clearAuthSession();
+      clearWorkspaceClientState();
+      await getDeviceFingerprint();
       const guestSession = persistAuthSession(
         {
           token: "trial_guest",

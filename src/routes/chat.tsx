@@ -25,6 +25,8 @@ import {
   type AuthSession,
   buildClientHeaders,
   clearAuthSession,
+  clearWorkspaceClientState,
+  fetchChatHistory,
   buildDocumentsUrl,
   createFolder,
   type DocumentRecord,
@@ -71,60 +73,30 @@ import {
   setStoredLocale,
 } from "../lib/locale";
 import { type UploadProgressState } from "../lib/upload-sse";
+import {
+  buildChatStorageScopeKey,
+  DEFAULT_WELCOME_MESSAGE,
+  loadChatMessagesForScope,
+  saveChatMessagesForScope,
+  type StoredChatMessage,
+} from "../lib/chatSessionStorage";
+import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
 export const Route = createFileRoute("/chat")({
   component: ChatPage,
   ssr: false,
 });
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
+interface ChatMessage extends StoredChatMessage {
   sources?: ChatSourceRef[];
 }
 
 type Tab = "chat" | "knowledge";
 
-const CHAT_MESSAGES_STORAGE_KEY = "priva_chat_messages";
-
-const DEFAULT_WELCOME_MESSAGE: ChatMessage = {
-  role: "assistant",
-  content:
-    "Welcome. Ask a question and PRIVA AI will cite your uploaded knowledge files.",
-};
-
-function loadStoredChatMessages(): ChatMessage[] {
-  if (typeof window === "undefined") {
-    return [DEFAULT_WELCOME_MESSAGE];
-  }
-
-  try {
-    const raw = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
-    if (!raw) return [DEFAULT_WELCOME_MESSAGE];
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return [DEFAULT_WELCOME_MESSAGE];
-    }
-
-    const valid = parsed.filter(
-      (item): item is ChatMessage =>
-        Boolean(item) &&
-        typeof item === "object" &&
-        (item.role === "user" || item.role === "assistant") &&
-        typeof item.content === "string",
-    );
-
-    return valid.length > 0 ? valid : [DEFAULT_WELCOME_MESSAGE];
-  } catch {
-    return [DEFAULT_WELCOME_MESSAGE];
-  }
-}
-
 function ChatPage() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
-  const [messages, setMessages] = useState<ChatMessage[]>(loadStoredChatMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [docs, setDocs] = useState<DocumentRecord[]>([]);
@@ -143,6 +115,7 @@ function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeUploadIdRef = useRef<string | null>(null);
+  const chatScopeKeyRef = useRef<string | null>(null);
 
   const [auth, setAuth] = useState<AuthSession | null>(null);
   const [locale, setLocale] = useState<AppLocale>("en");
@@ -183,24 +156,66 @@ function ChatPage() {
       navigate({ to: "/verify-face" });
       return;
     }
-    setAuth(session);
-    const initialLocale = resolveAppLocale();
-    setLocale(initialLocale);
-    setStoredLocale(initialLocale);
+    void (async () => {
+      if (loadPlanMode() === "free_trial") {
+        await getDeviceFingerprint();
+      }
+      setAuth(session);
+      const initialLocale = resolveAppLocale();
+      setLocale(initialLocale);
+      setStoredLocale(initialLocale);
+    })();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!auth?.token) return;
+
+    const scopeKey = buildChatStorageScopeKey(auth, planMode);
+    if (chatScopeKeyRef.current === scopeKey) return;
+    chatScopeKeyRef.current = scopeKey;
+
+    setDocs([]);
+    setFolders([]);
+    setCurrentFolderId(null);
+    setDocsError("");
+    setMessages([DEFAULT_WELCOME_MESSAGE]);
+
+    void (async () => {
+      try {
+        const history = await fetchChatHistory({ token: auth.token, planMode });
+        const apiMessages = history.messages
+          .filter(
+            (m) =>
+              (m.role === "user" || m.role === "assistant") &&
+              String(m.content || "").trim().length > 0,
+          )
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            sources: Array.isArray(m.sources) ? (m.sources as ChatSourceRef[]) : [],
+          }));
+
+        if (apiMessages.length > 0) {
+          setMessages(apiMessages);
+          saveChatMessagesForScope(scopeKey, apiMessages);
+          return;
+        }
+      } catch (err) {
+        console.warn("[Chat] server history load failed — using scoped cache:", err);
+      }
+
+      setMessages(loadChatMessagesForScope(scopeKey));
+    })();
+  }, [auth?.token, auth?.companyId, planMode]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
-    } catch (err) {
-      console.warn("[Chat] failed to persist messages:", err);
-    }
-  }, [messages]);
+    if (!auth?.token || !chatScopeKeyRef.current) return;
+    saveChatMessagesForScope(chatScopeKeyRef.current, messages);
+  }, [messages, auth?.token]);
 
   useEffect(() => {
     if (!mobileNavOpen) return;
@@ -771,13 +786,24 @@ function ChatPage() {
   };
 
   const handleReset = () => {
-    localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
+    if (chatScopeKeyRef.current) {
+      saveChatMessagesForScope(chatScopeKeyRef.current, [DEFAULT_WELCOME_MESSAGE]);
+    }
     setMessages([DEFAULT_WELCOME_MESSAGE]);
   };
 
   const handleLogout = () => {
     clearAuthSession();
+    clearWorkspaceClientState();
+    chatScopeKeyRef.current = null;
     setAuth(null);
+    setMessages([DEFAULT_WELCOME_MESSAGE]);
+    setDocs([]);
+    setFolders([]);
+    setCurrentFolderId(null);
+    setDocsError("");
+    setInput("");
+    setTrialStatus(null);
     setMobileNavOpen(false);
     navigate({ to: "/" });
   };
