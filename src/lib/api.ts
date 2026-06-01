@@ -44,6 +44,8 @@ export const USER_STORAGE_LIMIT_MESSAGE =
 export type PlanMode = "premium" | "free_trial";
 export const PLAN_MODE_STORAGE_KEY = "priva_plan_mode";
 export const TRIAL_LIMIT_MESSAGE = "Free Trial daily question limit reached (5 per 24 hours).";
+export const QUESTION_QUOTA_EXCEEDED_MESSAGE =
+  "لقد استهلكت كامل حصتك من الأسئلة لهذا الشهر. يرجى ترقية الباقة.";
 export const TRIAL_STORAGE_MESSAGE = "Free Trial storage quota exceeded (5MB max).";
 
 export const DEFAULT_TRIAL_STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -145,6 +147,44 @@ export function resolveUploadErrorMessage(err: unknown, locale?: AppLocale): str
   }
   if (err.message.trim()) return err.message.trim();
   return uploadFailedMessage;
+}
+
+export type QuestionUsageSnapshot = {
+  used: number;
+  limit: number;
+  remaining: number;
+};
+
+export async function fetchQuestionUsageSnapshot({
+  token,
+  planMode,
+}: {
+  token: string;
+  planMode: PlanMode;
+}): Promise<QuestionUsageSnapshot | null> {
+  if (planMode === "free_trial" || token === "trial_guest") {
+    return null;
+  }
+
+  try {
+    const headers = await buildClientHeaders({ token, planMode });
+    const res = await fetch(buildApiUrl("/api/documents/storage"), { headers });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Record<string, unknown>;
+    const limit = Number(data.monthly_question_limit);
+    const used = Number(data.current_month_question_count);
+    if (!Number.isFinite(limit) || limit < 1) return null;
+    return {
+      used: Number.isFinite(used) ? used : 0,
+      limit,
+      remaining: Math.max(
+        0,
+        Number(data.remaining_questions) || Math.max(0, limit - (Number.isFinite(used) ? used : 0)),
+      ),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchStorageQuotaSnapshot({

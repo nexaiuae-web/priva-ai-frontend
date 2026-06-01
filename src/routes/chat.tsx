@@ -45,10 +45,13 @@ import {
   loadPlanMode,
   fetchTrialStatus,
   fetchStorageQuotaSnapshot,
+  fetchQuestionUsageSnapshot,
   getStorageQuotaExceededMessage,
   resolveUploadErrorMessage,
+  QUESTION_QUOTA_EXCEEDED_MESSAGE,
   TRIAL_LIMIT_MESSAGE,
   wouldExceedStorageQuota,
+  type QuestionUsageSnapshot,
 } from "../lib/api";
 import {
   getWorkspaceUserIdFromToken,
@@ -126,6 +129,7 @@ function ChatPage() {
     storage_used_bytes: number;
     storage_limit_bytes: number;
   } | null>(null);
+  const [questionUsage, setQuestionUsage] = useState<QuestionUsageSnapshot | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const safeDocs = Array.isArray(docs) ? docs : [];
@@ -321,6 +325,17 @@ function ChatPage() {
       }
     })();
   }, [token, planMode, docsUploading, isLoading]);
+
+  useEffect(() => {
+    if (!token || planMode === "free_trial") {
+      setQuestionUsage(null);
+      return;
+    }
+    void (async () => {
+      const usage = await fetchQuestionUsageSnapshot({ token, planMode });
+      setQuestionUsage(usage);
+    })();
+  }, [token, planMode, isLoading]);
 
   useEffect(() => {
     if (!token || !companyId || docsUploading) return;
@@ -537,10 +552,18 @@ function ChatPage() {
         if (code === "TRIAL_LIMIT_REACHED") {
           detail = TRIAL_LIMIT_MESSAGE;
         }
+        if (code === "QUESTION_QUOTA_EXCEEDED") {
+          detail = QUESTION_QUOTA_EXCEEDED_MESSAGE;
+        }
         showAssistantError(detail);
         try {
-          const status = await fetchTrialStatus({ token, planMode });
-          setTrialStatus(status.trial);
+          if (planMode === "free_trial") {
+            const status = await fetchTrialStatus({ token, planMode });
+            setTrialStatus(status.trial);
+          } else {
+            const usage = await fetchQuestionUsageSnapshot({ token, planMode });
+            setQuestionUsage(usage);
+          }
         } catch {
           /* ignore */
         }
@@ -612,6 +635,11 @@ function ChatPage() {
         setAssistantContent(
           "The backend responded but returned no message content. Check the API response format.",
         );
+      }
+
+      if (planMode !== "free_trial") {
+        const usage = await fetchQuestionUsageSnapshot({ token, planMode });
+        setQuestionUsage(usage);
       }
     } catch (err) {
       const message = isBackendUnreachableError(err)
@@ -804,6 +832,7 @@ function ChatPage() {
     setDocsError("");
     setInput("");
     setTrialStatus(null);
+    setQuestionUsage(null);
     setMobileNavOpen(false);
     navigate({ to: "/" });
   };
@@ -848,6 +877,24 @@ function ChatPage() {
                       (trialStatus.storage_used_bytes / Math.max(1, trialStatus.storage_limit_bytes)) *
                         100,
                     ),
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+        {planMode !== "free_trial" && questionUsage ? (
+          <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
+            <p className="text-[10px] text-[#A3B8B0]">
+              Questions: {questionUsage.used} / {questionUsage.limit} Used
+            </p>
+            <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+              <div
+                className="h-full rounded bg-[#00E699]"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(0, (questionUsage.used / Math.max(1, questionUsage.limit)) * 100),
                   )}%`,
                 }}
               />
