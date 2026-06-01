@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { Toaster } from "../components/ui/sonner";
 import { useClientSecurityDefense } from "../hooks/useClientSecurityDefense";
 
 function NotFoundComponent() {
@@ -135,6 +136,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
+      <Toaster position="top-center" richColors closeButton duration={6000} />
     </QueryClientProvider>
   );
 }

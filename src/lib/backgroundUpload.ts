@@ -1,10 +1,15 @@
 import {
   buildApiUrl,
   buildClientHeaders,
+  createStorageLimitError,
   DOCUMENTS_API,
+  isStorageLimitApiPayload,
+  isStorageLimitHttpStatus,
   loadPlanMode,
   parseApiErrorPayload,
+  resolveStorageLimitMessage,
   STORAGE_LIMIT_MESSAGE,
+  STORAGE_QUOTA_EXCEEDED_AR,
   TRIAL_STORAGE_MESSAGE,
   USER_STORAGE_LIMIT_MESSAGE,
 } from "./api";
@@ -168,14 +173,28 @@ function statusToProgress(status: UploadStatusResponse): UploadProgressState {
 }
 
 function buildUploadError(status: UploadStatusResponse): Error {
-  const err = new Error(status.error || "Background processing failed.");
-  const lowered = String(status.error || "").toLowerCase();
+  const message = status.error || status.message || "Background processing failed.";
+  const lowered = String(message).toLowerCase();
   const storageHit =
     status.error === STORAGE_LIMIT_MESSAGE ||
-    lowered.includes("company storage quota");
+    lowered.includes("company storage quota") ||
+    lowered.includes("trial storage") ||
+    lowered.includes("storage quota");
   const userStorageHit =
     status.error === USER_STORAGE_LIMIT_MESSAGE ||
     lowered.includes("personal storage quota");
+  const trialHit =
+    status.error === TRIAL_STORAGE_MESSAGE ||
+    lowered.includes("trial storage exceeded") ||
+    lowered.includes("5mb");
+
+  if (trialHit) {
+    const err = new Error(message || TRIAL_STORAGE_MESSAGE);
+    (err as Error & { code?: string }).code = "TRIAL_STORAGE_EXCEEDED";
+    return err;
+  }
+
+  const err = new Error(message);
   (err as Error & { code?: string }).code = userStorageHit
     ? "USER_STORAGE_LIMIT_REACHED"
     : storageHit
@@ -368,20 +387,8 @@ export async function uploadDocumentInBackground(
 
   if (!res.ok) {
     const parsed = parseApiErrorPayload(raw);
-    if (parsed.error === "STORAGE_LIMIT_REACHED") {
-      const err = new Error(parsed.message || STORAGE_LIMIT_MESSAGE);
-      (err as Error & { code?: string }).code = "STORAGE_LIMIT_REACHED";
-      throw err;
-    }
-    if (parsed.error === "USER_STORAGE_LIMIT_REACHED") {
-      const err = new Error(parsed.message || USER_STORAGE_LIMIT_MESSAGE);
-      (err as Error & { code?: string }).code = "USER_STORAGE_LIMIT_REACHED";
-      throw err;
-    }
-    if (parsed.error === "TRIAL_STORAGE_EXCEEDED") {
-      const err = new Error(parsed.message || TRIAL_STORAGE_MESSAGE);
-      (err as Error & { code?: string }).code = "TRIAL_STORAGE_EXCEEDED";
-      throw err;
+    if (isStorageLimitHttpStatus(res.status) || isStorageLimitApiPayload(parsed)) {
+      throw createStorageLimitError(parsed, STORAGE_QUOTA_EXCEEDED_AR);
     }
     throw new Error(
       parsed.message || body.message || `Upload failed (${res.status}).`,

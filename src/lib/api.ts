@@ -41,6 +41,124 @@ export const PLAN_MODE_STORAGE_KEY = "priva_plan_mode";
 export const TRIAL_LIMIT_MESSAGE = "Free Trial daily question limit reached (5 per 24 hours).";
 export const TRIAL_STORAGE_MESSAGE = "Free Trial storage quota exceeded (5MB max).";
 
+export const DEFAULT_TRIAL_STORAGE_LIMIT_BYTES = 5 * 1024 * 1024;
+
+export const STORAGE_QUOTA_EXCEEDED_AR =
+  "خطأ: حجم الملف يتجاوز المساحة المتبقية المتاحة لحسابك (الحد الأقصى 5 ميجابايت)";
+
+const STORAGE_LIMIT_ERROR_CODES = new Set([
+  "STORAGE_LIMIT_REACHED",
+  "USER_STORAGE_LIMIT_REACHED",
+  "TRIAL_STORAGE_EXCEEDED",
+]);
+
+export interface StorageQuotaSnapshot {
+  usedBytes: number;
+  limitBytes: number;
+}
+
+export function wouldExceedStorageQuota(
+  usedBytes: number,
+  limitBytes: number,
+  fileSizeBytes: number,
+): boolean {
+  if (!Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) return false;
+  if (!Number.isFinite(limitBytes) || limitBytes <= 0) return false;
+  return usedBytes + fileSizeBytes > limitBytes;
+}
+
+export function isStorageLimitErrorCode(code?: string | null): boolean {
+  return Boolean(code && STORAGE_LIMIT_ERROR_CODES.has(code));
+}
+
+export function isStorageLimitHttpStatus(status: number): boolean {
+  return status === 400 || status === 413 || status === 507;
+}
+
+export function isStorageLimitApiPayload(parsed: {
+  error?: string;
+  code?: string;
+  message?: string;
+}): boolean {
+  if (isStorageLimitErrorCode(parsed.error) || isStorageLimitErrorCode(parsed.code)) {
+    return true;
+  }
+  const combined = `${parsed.error ?? ""} ${parsed.code ?? ""} ${parsed.message ?? ""}`.toLowerCase();
+  return (
+    combined.includes("storage") ||
+    combined.includes("quota") ||
+    combined.includes("limit exceeded") ||
+    combined.includes("trial_storage")
+  );
+}
+
+export function resolveStorageLimitMessage(
+  parsed: { error?: string; code?: string; message?: string },
+  fallback = STORAGE_QUOTA_EXCEEDED_AR,
+): string {
+  if (parsed.message?.trim()) return parsed.message.trim();
+  const code = parsed.error || parsed.code;
+  if (code === "USER_STORAGE_LIMIT_REACHED") return USER_STORAGE_LIMIT_MESSAGE;
+  if (code === "TRIAL_STORAGE_EXCEEDED") return TRIAL_STORAGE_MESSAGE;
+  if (code === "STORAGE_LIMIT_REACHED") return STORAGE_LIMIT_MESSAGE;
+  return fallback;
+}
+
+export function createStorageLimitError(
+  parsed: { error?: string; code?: string; message?: string },
+  fallback = STORAGE_QUOTA_EXCEEDED_AR,
+): Error {
+  const code = parsed.error || parsed.code || "STORAGE_LIMIT_REACHED";
+  const err = new Error(resolveStorageLimitMessage(parsed, fallback));
+  (err as Error & { code?: string }).code = code;
+  return err;
+}
+
+export function resolveUploadErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return "Upload failed. Please try again.";
+  if (isStorageLimitErrorCode(err.code)) {
+    return err.message.trim() || STORAGE_QUOTA_EXCEEDED_AR;
+  }
+  if (err.message.trim()) return err.message.trim();
+  return "Upload failed. Please try again.";
+}
+
+export async function fetchStorageQuotaSnapshot({
+  token,
+  planMode,
+  cached,
+}: {
+  token: string;
+  planMode: PlanMode;
+  cached?: StorageQuotaSnapshot | null;
+}): Promise<StorageQuotaSnapshot | null> {
+  if (cached && cached.limitBytes > 0) return cached;
+
+  if (planMode !== "free_trial" && token !== "trial_guest") {
+    return null;
+  }
+
+  try {
+    const status = await fetchTrialStatus({ token, planMode });
+    const trial = status?.trial;
+    if (!trial || typeof trial !== "object") {
+      return {
+        usedBytes: 0,
+        limitBytes: DEFAULT_TRIAL_STORAGE_LIMIT_BYTES,
+      };
+    }
+    return {
+      usedBytes: Number(trial.storage_used_bytes) || 0,
+      limitBytes: Number(trial.storage_limit_bytes) || DEFAULT_TRIAL_STORAGE_LIMIT_BYTES,
+    };
+  } catch {
+    return {
+      usedBytes: 0,
+      limitBytes: DEFAULT_TRIAL_STORAGE_LIMIT_BYTES,
+    };
+  }
+}
+
 function canUseWebStorage(): boolean {
   return typeof window !== "undefined";
 }

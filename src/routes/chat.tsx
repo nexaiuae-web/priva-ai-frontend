@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   ChevronRight,
   Folder,
@@ -41,10 +42,11 @@ import {
   type PlanMode,
   loadPlanMode,
   fetchTrialStatus,
-  STORAGE_LIMIT_MESSAGE,
+  fetchStorageQuotaSnapshot,
+  resolveUploadErrorMessage,
+  STORAGE_QUOTA_EXCEEDED_AR,
   TRIAL_LIMIT_MESSAGE,
-  TRIAL_STORAGE_MESSAGE,
-  USER_STORAGE_LIMIT_MESSAGE,
+  wouldExceedStorageQuota,
 } from "../lib/api";
 import {
   getWorkspaceUserIdFromToken,
@@ -68,7 +70,7 @@ import {
   resolveAppLocale,
   setStoredLocale,
 } from "../lib/locale";
-import { UploadSseError, type UploadProgressState } from "../lib/upload-sse";
+import { type UploadProgressState } from "../lib/upload-sse";
 
 export const Route = createFileRoute("/chat")({
   component: ChatPage,
@@ -159,6 +161,10 @@ function ChatPage() {
   const token = auth?.token ?? null;
   const companyId = auth?.companyId ?? "default";
   const companyLabel = planMode === "free_trial" ? "Free Trial" : auth?.companyName ?? companyId;
+
+  const showUploadErrorToast = (message: string) => {
+    toast.error(message, { duration: 6000 });
+  };
 
   useEffect(() => {
     const session = loadAuthSession();
@@ -322,17 +328,7 @@ function ChatPage() {
         setDocsUploading(false);
         activeUploadIdRef.current = null;
         setUploadProgress(null);
-        const code = (err as Error & { code?: string }).code;
-        if (code === "STORAGE_LIMIT_REACHED" || code === "USER_STORAGE_LIMIT_REACHED") {
-          setDocsError(
-            err.message ||
-              (code === "USER_STORAGE_LIMIT_REACHED"
-                ? USER_STORAGE_LIMIT_MESSAGE
-                : STORAGE_LIMIT_MESSAGE),
-          );
-        } else {
-          setDocsError(err.message || "Background upload failed.");
-        }
+        showUploadErrorToast(resolveUploadErrorMessage(err));
       },
     });
 
@@ -611,6 +607,26 @@ function ChatPage() {
     const file = e.target.files?.[0];
     if (!file || docsUploading || !token) return;
 
+    const quota = await fetchStorageQuotaSnapshot({
+      token,
+      planMode,
+      cached: trialStatus
+        ? {
+            usedBytes: trialStatus.storage_used_bytes,
+            limitBytes: trialStatus.storage_limit_bytes,
+          }
+        : null,
+    });
+
+    if (
+      quota &&
+      wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)
+    ) {
+      showUploadErrorToast(STORAGE_QUOTA_EXCEEDED_AR);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setDocsUploading(true);
     setDocsError("");
     setUploadingFilename(file.name);
@@ -660,31 +676,7 @@ function ChatPage() {
     } catch (err) {
       activeUploadIdRef.current = null;
       setUploadProgress(null);
-      const uploadCode = (err as Error & { code?: string }).code;
-      if (
-        (err instanceof UploadSseError &&
-          (err.code === "STORAGE_LIMIT_REACHED" ||
-            err.code === "USER_STORAGE_LIMIT_REACHED" ||
-            err.code === "TRIAL_STORAGE_EXCEEDED")) ||
-        uploadCode === "STORAGE_LIMIT_REACHED" ||
-        uploadCode === "USER_STORAGE_LIMIT_REACHED" ||
-        uploadCode === "TRIAL_STORAGE_EXCEEDED"
-      ) {
-        setDocsError(
-          (err as Error).message ||
-            (uploadCode === "USER_STORAGE_LIMIT_REACHED"
-              ? USER_STORAGE_LIMIT_MESSAGE
-              : uploadCode === "TRIAL_STORAGE_EXCEEDED"
-                ? TRIAL_STORAGE_MESSAGE
-                : STORAGE_LIMIT_MESSAGE),
-        );
-      } else if (isBackendUnreachableError(err)) {
-        setDocsError("Cannot reach the document API on port 3005.");
-      } else if (err instanceof Error && err.message) {
-        setDocsError(err.message);
-      } else {
-        setDocsError("Upload failed. Please try again.");
-      }
+      showUploadErrorToast(resolveUploadErrorMessage(err));
     } finally {
       activeUploadIdRef.current = null;
       setDocsUploading(false);
