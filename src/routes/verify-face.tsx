@@ -26,6 +26,9 @@ function VerifyFacePage() {
   const [verificationFailed, setVerificationFailed] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const isE2eFaceBypassEnabled =
+    typeof window !== "undefined" &&
+    localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
 
   const stopCamera = useCallback(() => {
     if (captureTimerRef.current != null) {
@@ -180,6 +183,11 @@ function VerifyFacePage() {
       navigate({ to: "/" });
       return;
     }
+    if (isE2eFaceBypassEnabled && session.username?.trim()) {
+      setFaceVerifiedForToken(session.token);
+      navigate({ to: "/chat" });
+      return;
+    }
     if (isFaceVerifiedForCurrentSession()) {
       navigate({ to: "/chat" });
       return;
@@ -190,7 +198,7 @@ function VerifyFacePage() {
     return () => {
       stopCamera();
     };
-  }, [navigate, startCamera, stopCamera]);
+  }, [isE2eFaceBypassEnabled, navigate, startCamera, stopCamera]);
 
   const showErrorActions = Boolean(error) || verificationFailed;
 
