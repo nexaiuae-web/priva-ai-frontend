@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   Outlet,
   Link,
@@ -11,6 +12,22 @@ import {
 import appCss from "../styles.css?url";
 import { Toaster } from "../components/ui/sonner";
 import { useClientSecurityDefense } from "../hooks/useClientSecurityDefense";
+
+function LoadingScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#041C15] px-4">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <span
+          className="inline-block h-10 w-10 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]"
+          aria-hidden
+        />
+        <p className="text-sm font-medium text-[#D5FBEA] sm:text-base">
+          جاري تهيئة الذكاء الاصطناعي...
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function NotFoundComponent() {
   return (
@@ -131,11 +148,23 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
+
   useClientSecurityDefense();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      {isLoading ? <LoadingScreen /> : <Outlet />}
       <Toaster position="top-center" richColors closeButton duration={6000} />
     </QueryClientProvider>
   );
