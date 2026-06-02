@@ -21,9 +21,14 @@ function LoadingScreen() {
           className="inline-block h-10 w-10 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]"
           aria-hidden
         />
-        <p className="text-sm font-medium text-[#D5FBEA] sm:text-base">
-          جاري تهيئة الذكاء الاصطناعي...
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-[#D5FBEA] sm:text-base" dir="rtl">
+            جاري تهيئة الذكاء الاصطناعي...
+          </p>
+          <p className="text-xs text-[#A3B8B0] sm:text-sm">
+            Initializing AI, please wait...
+          </p>
+        </div>
       </div>
     </div>
   );
