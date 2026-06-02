@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Info, X } from "lucide-react";
 import { useState } from "react";
 import {
   API_BASE,
@@ -23,6 +24,7 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,6 +245,95 @@ function LoginPage() {
           </div>
         </section>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setInfoOpen(true)}
+        className="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#00E699]/35 bg-[#041C15]/80 text-[#00E699] shadow-[0_0_16px_rgba(0,230,153,0.15)] backdrop-blur-md transition-all hover:border-[#00E699]/60 hover:bg-[#054232]/90 hover:text-white sm:bottom-6 sm:right-6"
+        aria-label="About PRIVA AI and how to use"
+        title="Info"
+      >
+        <Info size={20} strokeWidth={2.25} />
+      </button>
+
+      {infoOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+          role="presentation"
+          onClick={() => setInfoOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-[#00E699]/20 p-5 shadow-xl sm:max-w-lg sm:p-6"
+            style={{ background: "rgba(4, 28, 21, 0.96)" }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="login-info-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2
+                id="login-info-title"
+                className="text-lg font-semibold text-white"
+              >
+                PRIVA AI
+              </h2>
+              <button
+                type="button"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 text-[#A3B8B0] transition-colors hover:bg-[#054232]/50 hover:text-white"
+                onClick={() => setInfoOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <section className="max-h-[min(70vh,28rem)] space-y-4 overflow-y-auto pr-1">
+              <div>
+                <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
+                  About PRIVA AI
+                </h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-[#D5FBEA]/90">
+                  PRIVA AI is an advanced, sovereign sandbox platform engineered for secure
+                  data interaction. It provides a private environment where your data remains
+                  localized, ensuring total privacy while utilizing intelligent document
+                  processing, high-precision OCR, and context-aware AI analysis.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
+                  How to use
+                </h3>
+                <ul className="mt-2 space-y-2.5 text-sm leading-relaxed text-[#A3B8B0]">
+                  <li>
+                    <span className="font-semibold text-[#D5FBEA]">Access:</span> Log in
+                    with your credentials to enter the secure dashboard.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-[#D5FBEA]">Verify:</span> Complete
+                    the initial system handshake for identity verification.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-[#D5FBEA]">Upload:</span> Drag and
+                    drop your documents (PDF/Images) into the Knowledge Base; the system
+                    automatically performs OCR and indexing.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-[#D5FBEA]">Analyze:</span> Use the
+                    AI Chat to ask questions, summarize documents, or extract specific data
+                    from your uploaded files.
+                  </li>
+                  <li>
+                    <span className="font-semibold text-[#D5FBEA]">Manage:</span> Monitor
+                    your remaining queries and storage status directly from the dashboard
+                    sidebar.
+                  </li>
+                </ul>
+              </div>
+            </section>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
