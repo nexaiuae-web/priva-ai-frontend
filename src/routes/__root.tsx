@@ -140,8 +140,65 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en" style={{ overscrollBehavior: "none" }}>
       <head>
         <HeadContent />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              #priva-static-loading-screen {
+                position: fixed;
+                inset: 0;
+                z-index: 9999;
+                display: flex;
+                min-height: 100vh;
+                align-items: center;
+                justify-content: center;
+                background: #041c15;
+                padding: 16px;
+              }
+              #priva-static-loading-screen .priva-loading-content {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 16px;
+                text-align: center;
+                font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+              }
+              #priva-static-loading-screen .priva-spinner {
+                width: 40px;
+                height: 40px;
+                border-radius: 9999px;
+                border: 2px solid rgba(0, 230, 153, 0.3);
+                border-top-color: #00e699;
+                animation: priva-spin 1s linear infinite;
+              }
+              #priva-static-loading-screen .priva-loading-ar {
+                margin: 0;
+                color: #d5fbea;
+                font-size: 14px;
+                font-weight: 500;
+                direction: rtl;
+              }
+              #priva-static-loading-screen .priva-loading-en {
+                margin: 0;
+                color: #a3b8b0;
+                font-size: 12px;
+              }
+              @keyframes priva-spin {
+                to {
+                  transform: rotate(360deg);
+                }
+              }
+            `,
+          }}
+        />
       </head>
       <body style={{ overscrollBehavior: "none" }}>
+        <div id="priva-static-loading-screen" aria-hidden="true">
+          <div className="priva-loading-content">
+            <span className="priva-spinner" />
+            <p className="priva-loading-ar">جاري تهيئة الذكاء الاصطناعي...</p>
+            <p className="priva-loading-en">Initializing AI, please wait...</p>
+          </div>
+        </div>
         <div id="priva-app-root" style={{ minHeight: "100dvh", overscrollBehavior: "none" }}>
           {children}
         </div>
@@ -156,6 +213,11 @@ function RootComponent() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const staticLoader = document.getElementById("priva-static-loading-screen");
+    if (staticLoader) {
+      staticLoader.style.display = "none";
+    }
+
     const timer = window.setTimeout(() => {
       setIsLoading(false);
     }, 2000);
