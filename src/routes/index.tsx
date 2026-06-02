@@ -181,8 +181,7 @@ function LoginPage() {
             <span className="text-sm">{isSidebarOpen ? "◀" : "▶"}</span>
           </button>
           <div className="w-full max-w-xl rounded-2xl border border-[#00E699]/20 bg-[#041C15]/65 p-6 backdrop-blur-xl sm:p-8 md:p-10">
-            {/* Logo */}
-            <div className="mb-6 text-center sm:mb-8 md:mb-10">
+            <div className="mb-6 text-center sm:mb-8">
               <h1
                 className="text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-5xl"
                 style={{
@@ -192,12 +191,6 @@ function LoginPage() {
               >
                 PRIVA AI
               </h1>
-              <p className="mt-2 text-xs font-medium tracking-widest text-[#A3B8B0] uppercase sm:text-sm">
-                Sovereign Intelligence
-              </p>
-              <p className="mt-2 text-xs font-light tracking-wide text-[#00E699]/70 sm:text-sm">
-                ذكاء سيادي إماراتي
-              </p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6 md:space-y-7">
