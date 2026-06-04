@@ -11,6 +11,7 @@ import {
   persistAuthSession,
   setFaceVerifiedForToken,
 } from "../lib/api";
+import { SupportChat } from "../components/SupportChat";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
 export const Route = createFileRoute("/")({
@@ -25,6 +26,9 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const closeModal = () => setInfoOpen(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -346,18 +350,29 @@ function LoginPage() {
                     privaai.uae@gmail.com
                   </a>
                 </p>
-                <a
-                  href="mailto:privaai.uae@gmail.com?subject=Support%20Request%20-%20PRIVA%20AI"
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeModal();
+                    setIsChatOpen(true);
+                  }}
                   className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_14px_rgba(22,163,74,0.35)] transition-all hover:bg-green-500"
                 >
                   <MessageCircle size={18} strokeWidth={2.25} aria-hidden />
                   Start Support Chat
-                </a>
+                </button>
               </div>
             </section>
           </div>
         </div>
       ) : null}
+
+      {isChatOpen && (
+        <SupportChat
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+        />
+      )}
     </div>
   );
 }
