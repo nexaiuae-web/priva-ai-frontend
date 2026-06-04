@@ -330,6 +330,29 @@ function LoginPage() {
                   </li>
                 </ul>
               </div>
+
+              <hr className="border-[#00E699]/15" />
+
+              <div>
+                <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
+                  Support
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-[#A3B8B0]">
+                  For technical assistance, email us at:{" "}
+                  <a
+                    href="mailto:support@priva-ai.com"
+                    className="font-medium text-[#00E699] underline-offset-2 hover:underline"
+                  >
+                    support@priva-ai.com
+                  </a>
+                </p>
+                <a
+                  href="mailto:support@priva-ai.com?subject=Support%20Request%20-%20PRIVA%20AI"
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_14px_rgba(22,163,74,0.35)] transition-all hover:bg-green-500"
+                >
+                  Start Support Chat
+                </a>
+              </div>
             </section>
           </div>
         </div>
