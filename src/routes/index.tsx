@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Info, X } from "lucide-react";
+import { Info, MessageCircle, X } from "lucide-react";
 import { useState } from "react";
 import {
   API_BASE,
@@ -340,16 +340,17 @@ function LoginPage() {
                 <p className="mt-2 text-sm leading-relaxed text-[#A3B8B0]">
                   For technical assistance, email us at:{" "}
                   <a
-                    href="mailto:support@priva-ai.com"
+                    href="mailto:privaai.uae@gmail.com"
                     className="font-medium text-[#00E699] underline-offset-2 hover:underline"
                   >
-                    support@priva-ai.com
+                    privaai.uae@gmail.com
                   </a>
                 </p>
                 <a
-                  href="mailto:support@priva-ai.com?subject=Support%20Request%20-%20PRIVA%20AI"
-                  className="mt-3 flex min-h-[44px] w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_14px_rgba(22,163,74,0.35)] transition-all hover:bg-green-500"
+                  href="mailto:privaai.uae@gmail.com?subject=Support%20Request%20-%20PRIVA%20AI"
+                  className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_0_14px_rgba(22,163,74,0.35)] transition-all hover:bg-green-500"
                 >
+                  <MessageCircle size={18} strokeWidth={2.25} aria-hidden />
                   Start Support Chat
                 </a>
               </div>
