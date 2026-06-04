@@ -11,7 +11,7 @@ import {
   persistAuthSession,
   setFaceVerifiedForToken,
 } from "../lib/api";
-import { SupportChat } from "../components/SupportChat";
+import SupportChat from "../components/SupportChat";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
 export const Route = createFileRoute("/")({
