@@ -8,25 +8,17 @@ export interface SupportChatMessage {
 }
 
 interface SupportMessageRow {
-  id?: string;
-  user_id?: string;
-  userId?: string;
-  message?: string;
-  content?: string;
-  timestamp?: string;
-  created_at?: string;
+  id: string;
+  user_id: string;
+  message: string;
+  created_at: string;
 }
 
 interface SupportReplyRow {
-  id?: string;
-  message_id?: string;
-  messageId?: string;
-  reply?: string;
-  message?: string;
-  content?: string;
-  reply_text?: string;
-  timestamp?: string;
-  created_at?: string;
+  id: string;
+  message_id: string;
+  reply_text: string;
+  created_at: string;
 }
 
 function readString(...values: unknown[]): string {
@@ -36,31 +28,29 @@ function readString(...values: unknown[]): string {
   return "";
 }
 
-function readTimestamp(row: { timestamp?: string; created_at?: string }): string {
-  return readString(row.timestamp, row.created_at) || new Date().toISOString();
-}
-
-function mapMessageRow(row: SupportMessageRow): SupportChatMessage | null {
+function mapMessageRow(row: Partial<SupportMessageRow>): SupportChatMessage | null {
   const id = readString(row.id);
-  const content = readString(row.message, row.content);
-  if (!id || !content) return null;
+  const message = readString(row.message);
+  const createdAt = readString(row.created_at);
+  if (!id || !message) return null;
   return {
     id,
     role: "user",
-    content,
-    timestamp: readTimestamp(row),
+    content: message,
+    timestamp: createdAt || new Date().toISOString(),
   };
 }
 
-function mapReplyRow(row: SupportReplyRow): SupportChatMessage | null {
+function mapReplyRow(row: Partial<SupportReplyRow>): SupportChatMessage | null {
   const id = readString(row.id);
-  const content = readString(row.reply, row.reply_text, row.message, row.content);
-  if (!id || !content) return null;
+  const replyText = readString(row.reply_text);
+  const createdAt = readString(row.created_at);
+  if (!id || !replyText) return null;
   return {
     id,
     role: "support",
-    content,
-    timestamp: readTimestamp(row),
+    content: replyText,
+    timestamp: createdAt || new Date().toISOString(),
   };
 }
 
@@ -105,7 +95,7 @@ async function fetchMessagesFromSupabase(userId: string): Promise<SupportChatMes
   const encodedUserId = encodeURIComponent(userId);
   const rows = await supabaseSelect<SupportMessageRow>(
     "support_messages",
-    `user_id=eq.${encodedUserId}&select=id,user_id,message,content,timestamp,created_at&order=created_at.asc`,
+    `user_id=eq.${encodedUserId}&select=id,user_id,message,created_at&order=created_at.asc`,
   );
 
   return rows
@@ -119,7 +109,7 @@ async function fetchRepliesFromSupabase(messageIds: string[]): Promise<SupportCh
   const inList = messageIds.map((id) => encodeURIComponent(id)).join(",");
   const rows = await supabaseSelect<SupportReplyRow>(
     "support_replies",
-    `message_id=in.(${inList})&select=id,message_id,reply,reply_text,message,content,timestamp,created_at&order=created_at.asc`,
+    `message_id=in.(${inList})&select=id,message_id,reply_text,created_at&order=created_at.asc`,
   );
 
   return rows
@@ -237,13 +227,7 @@ export async function sendSupportMessage({
     body = {};
   }
 
-  const messageId = readString(
-    body.id,
-    body.message_id,
-    body.messageId,
-    (body.message as Record<string, unknown> | undefined)?.id,
-    (body.data as Record<string, unknown> | undefined)?.id,
-  );
+  const messageId = readString(body.id, body.message_id, body.messageId);
 
   return { messageId: messageId || undefined };
 }
