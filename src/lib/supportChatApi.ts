@@ -70,6 +70,8 @@ function getSupabaseConfig(): { url: string; anonKey: string } | null {
   return { url: url.replace(/\/+$/, ""), anonKey };
 }
 
+const SUPABASE_READ_TIMEOUT_MS = 12_000;
+
 async function supabaseSelect<T>(table: string, query: string): Promise<T[]> {
   const config = getSupabaseConfig();
   if (!config) return [];
@@ -80,6 +82,7 @@ async function supabaseSelect<T>(table: string, query: string): Promise<T[]> {
       Authorization: `Bearer ${config.anonKey}`,
       Accept: "application/json",
     },
+    signal: AbortSignal.timeout(SUPABASE_READ_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -175,20 +178,30 @@ async function fetchThreadFromBackend(
   return [];
 }
 
+async function fetchThreadFromSupabase(userId: string): Promise<SupportChatMessage[]> {
+  const messages = await fetchMessagesFromSupabase(userId);
+  const messageIds = messages.map((msg) => msg.id);
+  const replies = await fetchRepliesFromSupabase(messageIds);
+  return mergeSupportThread(messages, replies);
+}
+
+/** Reads use Supabase when configured (fast polling); falls back to the backend API. */
 export async function fetchSupportThread(
   userId: string,
   token: string | null = null,
 ): Promise<SupportChatMessage[]> {
   if (getSupabaseConfig()) {
-    const messages = await fetchMessagesFromSupabase(userId);
-    const messageIds = messages.map((msg) => msg.id);
-    const replies = await fetchRepliesFromSupabase(messageIds);
-    return mergeSupportThread(messages, replies);
+    try {
+      return await fetchThreadFromSupabase(userId);
+    } catch (err) {
+      console.warn("[supportChat] Supabase read failed, falling back to backend:", err);
+    }
   }
 
   return fetchThreadFromBackend(userId, token);
 }
 
+/** Writes always go through the backend API — never Supabase. */
 export async function sendSupportMessage({
   message,
   userId,

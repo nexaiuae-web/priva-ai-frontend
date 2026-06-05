@@ -96,6 +96,13 @@ export default function SupportChat({
     const userId = resolveSupportUserId();
     const session = loadAuthSession();
 
+    const optimisticMessage: SupportChatMessage = {
+      id: `local-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      timestamp,
+    };
+
     try {
       await sendSupportMessage({
         message: trimmed,
@@ -105,24 +112,18 @@ export default function SupportChat({
       });
 
       setInput("");
+      setMessages((prev) => mergeSupportThread(prev, [optimisticMessage]));
 
-      const optimisticMessage: SupportChatMessage = {
-        id: `local-${Date.now()}`,
-        role: "user",
-        content: trimmed,
-        timestamp,
-      };
-
-      try {
-        const thread = await fetchSupportThread(userId, session?.token ?? null);
-        if (thread.length > 0) {
-          setMessages(thread);
-        } else {
-          setMessages((prev) => mergeSupportThread(prev, [optimisticMessage]));
-        }
-      } catch {
-        setMessages((prev) => mergeSupportThread(prev, [optimisticMessage]));
-      }
+      // Refresh from Supabase in the background — do not block the send spinner.
+      void fetchSupportThread(userId, session?.token ?? null)
+        .then((thread) => {
+          if (thread.length > 0) {
+            setMessages(thread);
+          }
+        })
+        .catch(() => {
+          /* keep optimistic message; polling will retry */
+        });
     } catch (err) {
       setSendError(
         err instanceof Error ? err.message : "Could not send your message. Please try again.",
@@ -149,7 +150,7 @@ export default function SupportChat({
       </div>
 
       <div className="mb-2 min-h-0 flex-1 overflow-y-auto rounded border border-green-800/40 bg-[#132a22] p-2">
-        {loadingThread && messages.length <= 1 ? (
+        {loadingThread && messages.length <= 1 && !sending ? (
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-400">
             <Loader2 size={14} className="animate-spin" aria-hidden />
             Loading conversation…
