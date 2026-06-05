@@ -1,26 +1,21 @@
 import { Loader2, Send, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { loadAuthSession } from "../lib/api";
 import {
-  buildApiUrl,
-  buildClientHeaders,
-  loadAuthSession,
-  loadPlanMode,
-  parseApiErrorPayload,
-} from "../lib/api";
-
-interface SupportChatMessage {
-  id: string;
-  role: "user" | "support";
-  content: string;
-  timestamp: string;
-}
+  fetchSupportThread,
+  mergeSupportThread,
+  sendSupportMessage,
+  type SupportChatMessage,
+} from "../lib/supportChatApi";
 
 const WELCOME_MESSAGE: SupportChatMessage = {
   id: "welcome",
   role: "support",
   content: "Welcome! How can we help you today?",
-  timestamp: new Date().toISOString(),
+  timestamp: new Date(0).toISOString(),
 };
+
+const THREAD_POLL_MS = 8000;
 
 function resolveSupportUserId(): string {
   const session = loadAuthSession();
@@ -39,8 +34,51 @@ export default function SupportChat({
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<SupportChatMessage[]>([WELCOME_MESSAGE]);
   const [sending, setSending] = useState(false);
+  const [loadingThread, setLoadingThread] = useState(false);
   const [sendError, setSendError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const loadThread = useCallback(async (options?: { silent?: boolean }) => {
+    const userId = resolveSupportUserId();
+    const session = loadAuthSession();
+
+    if (!options?.silent) {
+      setLoadingThread(true);
+    }
+    try {
+      const thread = await fetchSupportThread(userId, session?.token ?? null);
+      setMessages(thread.length > 0 ? thread : [WELCOME_MESSAGE]);
+      if (!options?.silent) {
+        setSendError("");
+      }
+    } catch (err) {
+      console.warn("[SupportChat] thread load failed:", err);
+      if (!options?.silent) {
+        setSendError(
+          err instanceof Error ? err.message : "Could not load support conversation.",
+        );
+      }
+    } finally {
+      if (!options?.silent) {
+        setLoadingThread(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadThread();
+  }, [isOpen, loadThread]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const intervalId = window.setInterval(() => {
+      void loadThread({ silent: true });
+    }, THREAD_POLL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [isOpen, loadThread]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -57,42 +95,34 @@ export default function SupportChat({
     const timestamp = new Date().toISOString();
     const userId = resolveSupportUserId();
     const session = loadAuthSession();
-    const planMode = loadPlanMode();
 
     try {
-      const headers = await buildClientHeaders({
+      await sendSupportMessage({
+        message: trimmed,
+        userId,
+        timestamp,
         token: session?.token ?? null,
-        planMode,
-        contentType: "application/json",
       });
 
-      const res = await fetch(buildApiUrl("/api/support"), {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          message: trimmed,
-          userId,
-          timestamp,
-        }),
-      });
+      setInput("");
 
-      if (!res.ok) {
-        const raw = await res.text().catch(() => "");
-        const parsed = parseApiErrorPayload(raw);
-        throw new Error(
-          parsed.message || parsed.error || `Support request failed (${res.status}).`,
-        );
-      }
-
-      const userMessage: SupportChatMessage = {
-        id: `user-${Date.now()}`,
+      const optimisticMessage: SupportChatMessage = {
+        id: `local-${Date.now()}`,
         role: "user",
         content: trimmed,
         timestamp,
       };
 
-      setMessages((prev) => [...prev, userMessage]);
-      setInput("");
+      try {
+        const thread = await fetchSupportThread(userId, session?.token ?? null);
+        if (thread.length > 0) {
+          setMessages(thread);
+        } else {
+          setMessages((prev) => mergeSupportThread(prev, [optimisticMessage]));
+        }
+      } catch {
+        setMessages((prev) => mergeSupportThread(prev, [optimisticMessage]));
+      }
     } catch (err) {
       setSendError(
         err instanceof Error ? err.message : "Could not send your message. Please try again.",
@@ -119,24 +149,31 @@ export default function SupportChat({
       </div>
 
       <div className="mb-2 min-h-0 flex-1 overflow-y-auto rounded border border-green-800/40 bg-[#132a22] p-2">
-        <ul className="space-y-2">
-          {messages.map((msg) => (
-            <li
-              key={msg.id}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded px-2.5 py-1.5 text-sm ${
-                  msg.role === "user"
-                    ? "bg-green-600 text-white"
-                    : "text-gray-100"
-                }`}
+        {loadingThread && messages.length <= 1 ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-400">
+            <Loader2 size={14} className="animate-spin" aria-hidden />
+            Loading conversation…
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {messages.map((msg) => (
+              <li
+                key={msg.id}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.content}
-              </div>
-            </li>
-          ))}
-        </ul>
+                <div
+                  className={`max-w-[85%] rounded px-2.5 py-1.5 text-sm ${
+                    msg.role === "user"
+                      ? "bg-green-600 text-white"
+                      : "border border-green-800/40 bg-[#1a3329] text-gray-100"
+                  }`}
+                >
+                  {msg.content}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
