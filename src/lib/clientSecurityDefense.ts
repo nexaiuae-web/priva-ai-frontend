@@ -2,9 +2,16 @@ import { loadAuthSession, loadPlanMode } from "./api";
 
 const SECURITY_STYLE_ID = "priva-client-security-css";
 const DEBUGGER_INTERVAL_MS = 120;
+const DEBUG_ACCESS_STORAGE_KEY = "debug-access-enabled";
 
 function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+/** Whitelist: allow F12 / Inspect / devtools shortcuts on this machine only. */
+function isDebugAccessEnabled(): boolean {
+  if (!isBrowser()) return false;
+  return localStorage.getItem(DEBUG_ACCESS_STORAGE_KEY) === "true";
 }
 
 function isJwtLikeToken(token: string): boolean {
@@ -30,6 +37,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function shouldBlockDevToolsShortcut(event: KeyboardEvent): boolean {
+  if (isDebugAccessEnabled()) return false;
+
   const key = event.key;
   const code = event.code;
   const ctrl = event.ctrlKey;
@@ -121,6 +130,7 @@ function applyRootTouchGuards(): void {
 }
 
 function onContextMenu(event: MouseEvent): void {
+  if (isDebugAccessEnabled()) return;
   if (isEditableTarget(event.target)) return;
   event.preventDefault();
 }
@@ -166,16 +176,20 @@ export function installClientSecurityDefense(): ClientSecurityDefenseHandle {
     return { refresh: () => undefined, dispose: () => undefined };
   }
 
+  const debugAccessEnabled = isDebugAccessEnabled();
   injectSecurityStyles();
   applyRootTouchGuards();
   syncPremiumUiClass();
 
-  document.addEventListener("contextmenu", onContextMenu);
-  window.addEventListener("keydown", onKeyDown, true);
+  if (!debugAccessEnabled) {
+    document.addEventListener("contextmenu", onContextMenu);
+    window.addEventListener("keydown", onKeyDown, true);
+  }
+
   document.addEventListener("touchstart", onMultiTouch, { passive: false });
   document.addEventListener("touchmove", onMultiTouch, { passive: false });
 
-  const debuggerTimer = startDebuggerLoop();
+  const debuggerTimer = debugAccessEnabled ? null : startDebuggerLoop();
 
   const onStorage = () => {
     syncPremiumUiClass();
@@ -188,7 +202,7 @@ export function installClientSecurityDefense(): ClientSecurityDefenseHandle {
   };
 
   const dispose = () => {
-    clearInterval(debuggerTimer);
+    if (debuggerTimer) clearInterval(debuggerTimer);
     document.removeEventListener("contextmenu", onContextMenu);
     window.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("touchstart", onMultiTouch);
