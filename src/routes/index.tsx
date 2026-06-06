@@ -249,9 +249,9 @@ function LoginPage() {
       <button
         type="button"
         onClick={() => setInfoOpen(true)}
-        className="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#00E699]/35 bg-[#041C15]/80 text-[#00E699] shadow-[0_0_16px_rgba(0,230,153,0.15)] backdrop-blur-md transition-all hover:border-[#00E699]/60 hover:bg-[#054232]/90 hover:text-white sm:bottom-6 sm:right-6"
-        aria-label="About PRIVA AI and how to use"
-        title="Info"
+        className="fixed bottom-24 right-6 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#00E699]/35 bg-[#041C15]/80 text-[#00E699] shadow-[0_0_16px_rgba(0,230,153,0.15)] backdrop-blur-md transition-all hover:border-[#00E699]/60 hover:bg-[#054232]/90 hover:text-white"
+        aria-label="About PRIVA AI"
+        title="About"
       >
         <Info size={20} strokeWidth={2.25} />
       </button>
