@@ -21,6 +21,7 @@ import { ChatMessageActions } from "../components/ChatMessageActions";
 import { UploadProgressCard } from "../components/UploadProgressCard";
 import {
   API_BASE,
+  BACKEND_UNREACHABLE_MESSAGE,
   DOCUMENTS_API,
   type AuthSession,
   buildClientHeaders,
@@ -643,7 +644,7 @@ function ChatPage() {
       }
     } catch (err) {
       const message = isBackendUnreachableError(err)
-        ? "Local backend (port 3005) is not reachable. Please start your PRIVA AI server or use DEMO mode."
+        ? BACKEND_UNREACHABLE_MESSAGE
         : err instanceof Error
           ? err.message
           : "Something went wrong while waiting for the assistant response.";
@@ -766,7 +767,7 @@ function ChatPage() {
       } catch (err) {
         setDocsError(
           isBackendUnreachableError(err)
-            ? "Cannot reach the document API on port 3005."
+            ? BACKEND_UNREACHABLE_MESSAGE
             : err instanceof Error
               ? err.message
               : "Failed to move document.",
@@ -806,9 +807,7 @@ function ChatPage() {
       }
     } catch (err) {
       setDocsError(
-        isBackendUnreachableError(err)
-          ? "Cannot reach the document API on port 3005."
-          : "Delete failed. Please try again.",
+        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : "Delete failed. Please try again.",
       );
     }
   };

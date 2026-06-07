@@ -695,6 +695,8 @@ export function isBackendUnreachableError(err: unknown): boolean {
   return err instanceof TypeError;
 }
 
+export const BACKEND_UNREACHABLE_MESSAGE = `Server unreachable. Please verify the backend at ${PRODUCTION_API_URL} is available.`;
+
 const MIDDLEWARE_NEXT_ERROR = /next is not a function/i;
 
 export function isMiddlewareNextError(message: string): boolean {
@@ -703,7 +705,7 @@ export function isMiddlewareNextError(message: string): boolean {
 
 export function formatKnowledgeBaseLoadError(err: unknown): string {
   if (isBackendUnreachableError(err)) {
-    return "Cannot reach the document API. Check your backend connection.";
+    return BACKEND_UNREACHABLE_MESSAGE;
   }
   if (err instanceof Error) {
     if (MIDDLEWARE_NEXT_ERROR.test(err.message)) {

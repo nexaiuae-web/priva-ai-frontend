@@ -7,6 +7,7 @@ import {
   clearAuthSession,
   clearWorkspaceClientState,
   isBackendUnreachableError,
+  BACKEND_UNREACHABLE_MESSAGE,
   persistPlanMode,
   persistAuthSession,
   setFaceVerifiedForToken,
@@ -68,9 +69,7 @@ function LoginPage() {
       setError(err.message || err.error || "Invalid credentials");
     } catch (err) {
       setError(
-        isBackendUnreachableError(err)
-          ? `Server unreachable. Please check your local backend on port 3005.`
-          : "Login failed. Please try again.",
+        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : "Login failed. Please try again.",
       );
     } finally {
       setIsLoading(false);
