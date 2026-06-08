@@ -499,7 +499,51 @@ export function isFaceVerifiedForCurrentSession(): boolean {
   return Boolean(token && verified && verified === token);
 }
 
-export async function verifyFaceSnapshot(imageBase64: string): Promise<{
+export function isBackendUnreachableError(err: unknown): boolean {
+  return err instanceof TypeError;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+export async function verifyFaceSnapshot(
+  imageBase64: string,
+  options?: {
+    maxAttempts?: number;
+    retryDelayMs?: number;
+    onRetry?: (nextAttempt: number) => void;
+  },
+): Promise<{
+  success: boolean;
+  match_score?: number;
+  enrolled?: boolean;
+}> {
+  const maxAttempts = Math.max(1, options?.maxAttempts ?? 2);
+  const retryDelayMs = options?.retryDelayMs ?? 1000;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await verifyFaceSnapshotOnce(imageBase64);
+    } catch (err) {
+      lastError = err;
+      const canRetry = isBackendUnreachableError(err) && attempt < maxAttempts;
+      if (!canRetry) {
+        throw err;
+      }
+
+      options?.onRetry?.(attempt + 1);
+      await sleep(retryDelayMs);
+    }
+  }
+
+  throw lastError;
+}
+
+async function verifyFaceSnapshotOnce(imageBase64: string): Promise<{
   success: boolean;
   match_score?: number;
   enrolled?: boolean;
@@ -689,10 +733,6 @@ export function formatDocumentDate(iso: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-}
-
-export function isBackendUnreachableError(err: unknown): boolean {
-  return err instanceof TypeError;
 }
 
 export const BACKEND_UNREACHABLE_MESSAGE = `Server unreachable. Please verify the backend at ${PRODUCTION_API_URL} is available.`;

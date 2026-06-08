@@ -4,6 +4,7 @@ import {
   clearAuthSession,
   FACE_PROFILE_NOT_CONFIGURED_MESSAGE,
   FACE_VERIFY_FAILED_MESSAGE,
+  isBackendUnreachableError,
   isFaceVerifiedForCurrentSession,
   loadAuthSession,
   setFaceVerifiedForToken,
@@ -79,7 +80,13 @@ function VerifyFacePage() {
 
       const optimized = preprocessFaceCaptureCanvas(canvas);
       const dataUrl = optimized.toDataURL("image/jpeg", 0.92);
-      await verifyFaceSnapshot(dataUrl);
+      await verifyFaceSnapshot(dataUrl, {
+        maxAttempts: 2,
+        retryDelayMs: 1000,
+        onRetry: () => {
+          setStatus("Connection unstable, retrying…");
+        },
+      });
       setFaceVerifiedForToken(session.token);
       stopCamera();
       navigate({ to: "/chat" });
@@ -88,11 +95,15 @@ function VerifyFacePage() {
       const message =
         code === "FACE_PROFILE_NOT_CONFIGURED"
           ? FACE_PROFILE_NOT_CONFIGURED_MESSAGE
-          : (err as Error).message || FACE_VERIFY_FAILED_MESSAGE;
+          : isBackendUnreachableError(err)
+            ? "Unable to reach the verification server. Please check your connection and try again."
+            : (err as Error).message || FACE_VERIFY_FAILED_MESSAGE;
       setError(message);
       setVerificationFailed(true);
       if (code === "FACE_PROFILE_NOT_CONFIGURED") {
         setStatus("Face profile not configured");
+      } else if (isBackendUnreachableError(err)) {
+        setStatus("Connection failed — please try again");
       } else {
         setStatus("Verification failed — adjust lighting or position and try again");
       }
