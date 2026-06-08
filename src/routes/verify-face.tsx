@@ -56,11 +56,6 @@ function VerifyFacePage() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  }, []);
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
   }, [stopFaceDetectionLoop]);
 
   const startFaceDetectionLoop = useCallback(() => {
