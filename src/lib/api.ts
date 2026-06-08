@@ -168,7 +168,7 @@ export async function fetchQuestionUsageSnapshot({
 
   try {
     const headers = await buildClientHeaders({ token, planMode });
-    const res = await fetch(buildApiUrl("/api/documents/storage"), { headers });
+    const res = await fetchWithRetry(buildApiUrl("/api/documents/storage"), { headers }, { notify: false });
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, unknown>;
     const limit = Number(data.monthly_question_limit);
@@ -306,7 +306,7 @@ export async function fetchTrialStatus({
   planMode?: PlanMode;
 } = {}): Promise<TrialStatusPayload> {
   const headers = await buildClientHeaders({ token, planMode });
-  const res = await fetch(buildApiUrl("/api/trial/status"), { headers });
+  const res = await fetchWithRetry(buildApiUrl("/api/trial/status"), { headers });
   const body = (await res.json().catch(() => ({}))) as TrialStatusPayload;
   if (!res.ok) {
     throw new Error("Failed to load trial status.");
@@ -465,7 +465,7 @@ export async function fetchChatHistory({
   planMode?: PlanMode;
 }): Promise<{ company_id: string; messages: ChatHistoryMessage[] }> {
   const headers = await buildClientHeaders({ token, planMode });
-  const res = await fetch(buildApiUrl("/api/chat/history"), { headers });
+  const res = await fetchWithRetry(buildApiUrl("/api/chat/history"), { headers });
   const body = (await res.json().catch(() => ({}))) as {
     company_id?: string;
     messages?: ChatHistoryMessage[];
@@ -503,47 +503,160 @@ export function isBackendUnreachableError(err: unknown): boolean {
   return err instanceof TypeError;
 }
 
+export const API_RETRY_MESSAGE = "Connection unstable, retrying...";
+
+const DEFAULT_FETCH_MAX_ATTEMPTS = 2;
+const DEFAULT_FETCH_RETRY_DELAY_MS = 1000;
+const RETRYABLE_HTTP_STATUS = new Set([503, 504]);
+
+export type ApiRetryStatus = "idle" | "retrying";
+
+type ApiRetryListener = (status: ApiRetryStatus, message: string) => void;
+
+const apiRetryListeners = new Set<ApiRetryListener>();
+
+export function subscribeApiRetryStatus(listener: ApiRetryListener): () => void {
+  apiRetryListeners.add(listener);
+  return () => {
+    apiRetryListeners.delete(listener);
+  };
+}
+
+function notifyApiRetryStatus(status: ApiRetryStatus, message = ""): void {
+  for (const listener of apiRetryListeners) {
+    listener(status, message);
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
 }
 
-export async function verifyFaceSnapshot(
-  imageBase64: string,
-  options?: {
-    maxAttempts?: number;
-    retryDelayMs?: number;
-    onRetry?: (nextAttempt: number) => void;
-  },
-): Promise<{
-  success: boolean;
-  match_score?: number;
-  enrolled?: boolean;
-}> {
-  const maxAttempts = Math.max(1, options?.maxAttempts ?? 2);
-  const retryDelayMs = options?.retryDelayMs ?? 1000;
+function isRetryableHttpStatus(status: number): boolean {
+  return RETRYABLE_HTTP_STATUS.has(status);
+}
+
+function cloneRequestBody(body: BodyInit | null | undefined): BodyInit | null | undefined {
+  if (body == null) return body;
+
+  if (body instanceof FormData) {
+    const clone = new FormData();
+    for (const [key, value] of body.entries()) {
+      clone.append(key, value);
+    }
+    return clone;
+  }
+
+  if (body instanceof URLSearchParams) {
+    return new URLSearchParams(body);
+  }
+
+  if (typeof body === "string") {
+    return body;
+  }
+
+  if (body instanceof Blob) {
+    return body.slice();
+  }
+
+  if (body instanceof ArrayBuffer) {
+    return body.slice(0);
+  }
+
+  if (ArrayBuffer.isView(body)) {
+    const view = body as ArrayBufferView;
+    return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
+  }
+
+  return body;
+}
+
+function cloneRequestInit(init?: RequestInit): RequestInit | undefined {
+  if (!init) return init;
+
+  return {
+    ...init,
+    headers:
+      init.headers instanceof Headers ? new Headers(init.headers) : init.headers,
+    body: cloneRequestBody(init.body ?? undefined),
+  };
+}
+
+export type FetchWithRetryOptions = {
+  maxAttempts?: number;
+  retryDelayMs?: number;
+  onRetry?: (nextAttempt: number) => void;
+  /** Show global retry UI; defaults to true */
+  notify?: boolean;
+};
+
+/**
+ * Global fetch wrapper: retries network failures (TypeError) and 503/504 responses.
+ * Clones FormData and other bodies before retrying so uploads remain safe.
+ */
+export async function fetchWithRetry(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  options: FetchWithRetryOptions = {},
+): Promise<Response> {
+  const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_FETCH_MAX_ATTEMPTS);
+  const retryDelayMs = options.retryDelayMs ?? DEFAULT_FETCH_RETRY_DELAY_MS;
+  const notify = options.notify !== false;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const requestInit = attempt === 1 ? init : cloneRequestInit(init);
+
     try {
-      return await verifyFaceSnapshotOnce(imageBase64);
+      const res = await fetch(input, requestInit);
+
+      if (isRetryableHttpStatus(res.status) && attempt < maxAttempts) {
+        if (notify) {
+          notifyApiRetryStatus("retrying", API_RETRY_MESSAGE);
+        }
+        options.onRetry?.(attempt + 1);
+        await sleep(retryDelayMs);
+        continue;
+      }
+
+      if (notify) {
+        notifyApiRetryStatus("idle");
+      }
+
+      return res;
     } catch (err) {
       lastError = err;
-      const canRetry = isBackendUnreachableError(err) && attempt < maxAttempts;
-      if (!canRetry) {
+
+      if (!isBackendUnreachableError(err) || attempt >= maxAttempts) {
+        if (notify) {
+          notifyApiRetryStatus("idle");
+        }
         throw err;
       }
 
-      options?.onRetry?.(attempt + 1);
+      if (notify) {
+        notifyApiRetryStatus("retrying", API_RETRY_MESSAGE);
+      }
+      options.onRetry?.(attempt + 1);
       await sleep(retryDelayMs);
     }
+  }
+
+  if (notify) {
+    notifyApiRetryStatus("idle");
   }
 
   throw lastError;
 }
 
-async function verifyFaceSnapshotOnce(imageBase64: string): Promise<{
+export async function verifyFaceSnapshot(
+  imageBase64: string,
+  options?: {
+    onRetry?: () => void;
+  },
+): Promise<{
   success: boolean;
   match_score?: number;
   enrolled?: boolean;
@@ -562,11 +675,17 @@ async function verifyFaceSnapshotOnce(imageBase64: string): Promise<{
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
-  const res = await fetch(buildApiUrl("/api/auth/verify-face"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ image: imageBase64 }),
-  });
+  const res = await fetchWithRetry(
+    buildApiUrl("/api/auth/verify-face"),
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ image: imageBase64 }),
+    },
+    {
+      onRetry: () => options?.onRetry?.(),
+    },
+  );
 
   const payload = (await res.json().catch(() => ({}))) as {
     success?: boolean;
@@ -604,7 +723,7 @@ export interface FolderRecord {
 
 export async function fetchFolders(token: string): Promise<FolderRecord[]> {
   const headers = await buildClientHeaders({ token, planMode: loadPlanMode() });
-  const res = await fetch(FOLDERS_API, {
+  const res = await fetchWithRetry(FOLDERS_API, {
     headers,
   });
   const body = await res.json().catch(() => ({}));
@@ -627,7 +746,7 @@ export async function createFolder(token: string, name: string): Promise<FolderR
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
-  const res = await fetch(FOLDERS_API, {
+  const res = await fetchWithRetry(FOLDERS_API, {
     method: "POST",
     headers,
     body: JSON.stringify({ name }),
@@ -662,7 +781,7 @@ export async function moveDocumentToFolder(
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
-  const res = await fetch(`${DOCUMENTS_API}/${encodeURIComponent(documentId)}/move`, {
+  const res = await fetchWithRetry(`${DOCUMENTS_API}/${encodeURIComponent(documentId)}/move`, {
     method: "PATCH",
     headers,
     body: JSON.stringify({ folder_id: folderId }),

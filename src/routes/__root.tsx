@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { ApiRetryNotifier } from "../components/ApiRetryNotifier";
 import { Toaster } from "../components/ui/sonner";
 import { TawkRouteGate } from "../components/TawkRouteGate";
 import { useClientSecurityDefense } from "../hooks/useClientSecurityDefense";
@@ -233,6 +234,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <TawkRouteGate />
+      <ApiRetryNotifier />
       {isLoading ? <LoadingScreen /> : <Outlet />}
       <Toaster position="top-center" richColors closeButton duration={6000} />
     </QueryClientProvider>

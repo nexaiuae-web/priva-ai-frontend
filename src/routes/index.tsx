@@ -6,6 +6,7 @@ import {
   buildClientHeaders,
   clearAuthSession,
   clearWorkspaceClientState,
+  fetchWithRetry,
   isBackendUnreachableError,
   BACKEND_UNREACHABLE_MESSAGE,
   persistPlanMode,
@@ -35,7 +36,7 @@ function LoginPage() {
     try {
       persistPlanMode("premium");
       clearWorkspaceClientState();
-      const res = await fetch(`${API_BASE}/api/login`, {
+      const res = await fetchWithRetry(`${API_BASE}/api/login`, {
         method: "POST",
         headers: await buildClientHeaders({
           contentType: "application/json",

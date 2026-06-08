@@ -30,6 +30,7 @@ import {
   fetchChatHistory,
   buildDocumentsUrl,
   createFolder,
+  fetchWithRetry,
   type DocumentRecord,
   extractResponseContent,
   fetchFolders,
@@ -265,7 +266,7 @@ function ChatPage() {
         return;
       }
 
-      const res = await fetch(buildDocumentsUrl(folderId), {
+      const res = await fetchWithRetry(buildDocumentsUrl(folderId), {
         headers,
       });
       const data = await res.json().catch(() => ({}));
@@ -523,7 +524,7 @@ function ChatPage() {
     setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await fetchWithRetry(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: await buildClientHeaders({
           token,
@@ -796,7 +797,7 @@ function ChatPage() {
   const handleDeleteDoc = async (id: string) => {
     setDocsError("");
     try {
-      const res = await fetch(`${DOCUMENTS_API}/${id}`, {
+      const res = await fetchWithRetry(`${DOCUMENTS_API}/${id}`, {
         method: "DELETE",
         headers: await buildClientHeaders({ token, planMode }),
       });

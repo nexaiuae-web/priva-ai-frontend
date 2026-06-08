@@ -81,8 +81,6 @@ function VerifyFacePage() {
       const optimized = preprocessFaceCaptureCanvas(canvas);
       const dataUrl = optimized.toDataURL("image/jpeg", 0.92);
       await verifyFaceSnapshot(dataUrl, {
-        maxAttempts: 2,
-        retryDelayMs: 1000,
         onRetry: () => {
           setStatus("Connection unstable, retrying…");
         },

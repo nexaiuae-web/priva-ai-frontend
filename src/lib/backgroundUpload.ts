@@ -3,6 +3,7 @@ import {
   buildClientHeaders,
   createStorageLimitError,
   DOCUMENTS_API,
+  fetchWithRetry,
   isStorageLimitApiPayload,
   isStorageLimitHttpStatus,
   loadPlanMode,
@@ -211,7 +212,7 @@ export async function fetchUploadStatus(
   console.log("[BG-UPLOAD] GET status", url);
   const headers = await buildClientHeaders({ token, planMode: loadPlanMode(), accept: "application/json" });
 
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     headers,
     cache: "no-store",
@@ -370,7 +371,7 @@ export async function uploadDocumentInBackground(
     total: 0,
   });
 
-  const res = await fetch(DOCUMENTS_API, {
+  const res = await fetchWithRetry(DOCUMENTS_API, {
     method: "POST",
     headers: await buildClientHeaders({ token, planMode: loadPlanMode() }),
     body: formData,
