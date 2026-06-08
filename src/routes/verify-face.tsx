@@ -11,6 +11,9 @@ import {
   verifyFaceSnapshot,
 } from "../lib/api";
 import { preprocessFaceCaptureCanvas } from "../lib/faceCapturePreprocess";
+import { analyzeFaceFrame } from "../lib/faceDetectionGuide";
+
+const FACE_DETECTION_INTERVAL_MS = 280;
 
 export const Route = createFileRoute("/verify-face")({
   component: VerifyFacePage,
@@ -21,17 +24,29 @@ function VerifyFacePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureTimerRef = useRef<number | null>(null);
+  const faceDetectionTimerRef = useRef<number | null>(null);
+  const isVerifyingRef = useRef(false);
 
   const [status, setStatus] = useState("Requesting camera access…");
   const [error, setError] = useState("");
   const [verificationFailed, setVerificationFailed] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [flashEffect, setFlashEffect] = useState(false);
   const isE2eFaceBypassEnabled =
     typeof window !== "undefined" &&
     localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
 
+  const stopFaceDetectionLoop = useCallback(() => {
+    if (faceDetectionTimerRef.current != null) {
+      window.clearTimeout(faceDetectionTimerRef.current);
+      faceDetectionTimerRef.current = null;
+    }
+  }, []);
+
   const stopCamera = useCallback(() => {
+    stopFaceDetectionLoop();
+    setFlashEffect(false);
     if (captureTimerRef.current != null) {
       window.clearTimeout(captureTimerRef.current);
       captureTimerRef.current = null;
@@ -42,6 +57,49 @@ function VerifyFacePage() {
       videoRef.current.srcObject = null;
     }
   }, []);
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, [stopFaceDetectionLoop]);
+
+  const startFaceDetectionLoop = useCallback(() => {
+    stopFaceDetectionLoop();
+
+    const tick = async () => {
+      const video = videoRef.current;
+
+      if (!video || !streamRef.current?.active || isVerifyingRef.current) {
+        if (isVerifyingRef.current) {
+          setFlashEffect(false);
+        }
+        faceDetectionTimerRef.current = window.setTimeout(() => {
+          void tick();
+        }, FACE_DETECTION_INTERVAL_MS);
+        return;
+      }
+
+      try {
+        const analysis = await analyzeFaceFrame(video);
+        setFlashEffect(analysis.needsFlash);
+      } catch {
+        // Ignore transient frame-analysis errors.
+      }
+
+      faceDetectionTimerRef.current = window.setTimeout(() => {
+        void tick();
+      }, FACE_DETECTION_INTERVAL_MS);
+    };
+
+    void tick();
+  }, [stopFaceDetectionLoop]);
+
+  useEffect(() => {
+    isVerifyingRef.current = isVerifying;
+    if (isVerifying) {
+      setFlashEffect(false);
+    }
+  }, [isVerifying]);
 
   const captureAndVerify = useCallback(async () => {
     const video = videoRef.current;
@@ -150,13 +208,14 @@ function VerifyFacePage() {
         await videoRef.current.play();
       }
       setStatus("Position your face in the circle");
+      startFaceDetectionLoop();
       scheduleCapture();
     } catch {
       setError("Camera access is required for FaceID verification.");
       setVerificationFailed(true);
       setStatus("Camera access denied");
     }
-  }, [scheduleCapture]);
+  }, [scheduleCapture, startFaceDetectionLoop]);
 
   const handleRetry = useCallback(() => {
     setError("");
@@ -172,13 +231,14 @@ function VerifyFacePage() {
     const video = videoRef.current;
     if (streamRef.current?.active && video?.srcObject) {
       setStatus("Position your face in the circle");
+      startFaceDetectionLoop();
       scheduleCapture();
       return;
     }
 
     stopCamera();
     void startCamera();
-  }, [scheduleCapture, startCamera, stopCamera]);
+  }, [scheduleCapture, startCamera, startFaceDetectionLoop, stopCamera]);
 
   const handleReturnToLogin = useCallback(() => {
     stopCamera();
@@ -235,7 +295,12 @@ function VerifyFacePage() {
           </div>
 
           <div className="relative mx-auto mt-6 h-52 w-52 sm:mt-8 sm:h-56 sm:w-56 md:mt-10 md:h-64 md:w-64 lg:h-72 lg:w-72">
-            <div className="absolute inset-0 rounded-full border-2 border-[#00E699]/40 shadow-[0_0_40px_rgba(0,230,153,0.25)] md:border-[3px] lg:shadow-[0_0_56px_rgba(0,230,153,0.3)]" />
+            <div
+              className={`face-verify-frame absolute inset-0 rounded-full ${
+                flashEffect ? "face-verify-frame--flash" : ""
+              }`}
+              aria-hidden
+            />
             <video
               ref={videoRef}
               autoPlay
