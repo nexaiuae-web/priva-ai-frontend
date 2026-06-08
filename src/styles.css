@@ -123,4 +123,12 @@
     color: var(--color-foreground);
     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   }
+
+  body:not(.priva-tawk-visible) #tawk-bubble-container,
+  body:not(.priva-tawk-visible) .tawk-min-container,
+  body:not(.priva-tawk-visible) .tawk-max-container {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
 }
