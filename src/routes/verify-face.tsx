@@ -289,9 +289,13 @@ function VerifyFacePage() {
             <p className="mt-2 text-xs text-[#A3B8B0] sm:text-sm md:text-base">{status}</p>
           </div>
 
-          <div className="relative mx-auto mt-6 h-52 w-52 sm:mt-8 sm:h-56 sm:w-56 md:mt-10 md:h-64 md:w-64 lg:h-72 lg:w-72">
+          <div
+            className={`face-verify-camera relative mx-auto mt-6 h-52 w-52 sm:mt-8 sm:h-56 sm:w-56 md:mt-10 md:h-64 md:w-64 lg:h-72 lg:w-72 ${
+              flashEffect ? "face-verify-camera--flash" : ""
+            }`}
+          >
             <div
-              className={`face-verify-frame absolute inset-0 rounded-full ${
+              className={`face-verify-frame rounded-full ${
                 flashEffect ? "face-verify-frame--flash" : ""
               }`}
               aria-hidden
@@ -301,10 +305,10 @@ function VerifyFacePage() {
               autoPlay
               playsInline
               muted
-              className="h-full w-full rounded-full object-cover"
+              className="face-verify-video h-full w-full rounded-full object-cover"
             />
             {countdown != null && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-black/40 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
                 {countdown}
               </div>
             )}
