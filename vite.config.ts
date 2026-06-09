@@ -11,7 +11,15 @@ const PRODUCTION_API_TARGET = "https://priva-ai-api.onrender.com";
 export default defineConfig({
   base: "./",
   cloudflare: false,
+  vite: {
+    build: {
+      sourcemap: true,
+    },
+  },
   tanstackStart: {
+    client: {
+      entry: "main",
+    },
     spa: {
       enabled: true,
       prerender: {
