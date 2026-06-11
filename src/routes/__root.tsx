@@ -237,29 +237,6 @@ function RootComponent() {
       <ApiRetryNotifier />
       {isLoading ? <LoadingScreen /> : <Outlet />}
       <Toaster position="top-center" richColors closeButton duration={6000} />
-      <button
-        type="button"
-        onClick={() => {
-          throw new Error("Sentry Test: This is a manual error check!");
-        }}
-        style={{
-          position: "fixed",
-          top: 12,
-          left: 12,
-          zIndex: 9998,
-          padding: "10px 14px",
-          backgroundColor: "#dc2626",
-          color: "#ffffff",
-          border: "none",
-          borderRadius: 8,
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: "pointer",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-        }}
-      >
-        Test Sentry Error
-      </button>
     </QueryClientProvider>
   );
 }
