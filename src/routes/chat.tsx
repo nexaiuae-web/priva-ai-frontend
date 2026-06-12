@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
   ChevronRight,
@@ -99,6 +100,7 @@ interface ChatMessage extends StoredChatMessage {
 type Tab = "chat" | "knowledge";
 
 function ChatPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_WELCOME_MESSAGE]);
@@ -139,7 +141,8 @@ function ChatPage() {
 
   const token = auth?.token ?? null;
   const companyId = auth?.companyId ?? "default";
-  const companyLabel = planMode === "free_trial" ? "Free Trial" : auth?.companyName ?? companyId;
+  const companyLabel =
+    planMode === "free_trial" ? t("freeTrial") : auth?.companyName ?? companyId;
 
   const showStorageQuotaToast = useCallback(() => {
     toast.error(getStorageQuotaExceededMessage(locale), { duration: 6000 });
@@ -804,11 +807,11 @@ function ChatPage() {
       if (res.ok) {
         setDocs((prev) => prev.filter((doc) => doc.id !== id));
       } else {
-        setDocsError(`Delete failed (${res.status}).`);
+        setDocsError(t("deleteFailedStatus", { status: res.status }));
       }
     } catch (err) {
       setDocsError(
-        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : "Delete failed. Please try again.",
+        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("deleteFailed"),
       );
     }
   };
@@ -851,19 +854,22 @@ function ChatPage() {
   const sidebarContent = (
     <>
       <div className="shrink-0 p-4 lg:p-6">
-        <h2 className="text-lg font-bold text-white">AI Workspace</h2>
+        <h2 className="text-lg font-bold text-white">{t("aiWorkspace")}</h2>
         <p className="mt-1 text-xs text-[#A3B8B0]">
-          Active Company:{" "}
+          {t("activeCompany")}{" "}
           <span className="text-[#00E699]">{companyLabel}</span>
         </p>
         {planMode === "free_trial" && trialStatus ? (
           <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
             <p className="text-[10px] text-[#A3B8B0]">
-              Plan: <span className="font-semibold text-white">Free Trial</span> |{" "}
-              {trialStatus.remaining_requests}/{trialStatus.request_limit} Questions Left
+              {t("plan")} <span className="font-semibold text-white">{t("freeTrial")}</span> |{" "}
+              {t("questionsLeft", {
+                remaining: trialStatus.remaining_requests,
+                limit: trialStatus.request_limit,
+              })}
             </p>
             <p className="mt-1 text-[10px] text-[#A3B8B0]">
-              Storage: {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
+              {t("storage")} {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
               {(trialStatus.storage_limit_bytes / (1024 * 1024)).toFixed(1)}MB
             </p>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
@@ -886,7 +892,10 @@ function ChatPage() {
         {planMode !== "free_trial" && questionUsage ? (
           <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
             <p className="text-[10px] text-[#A3B8B0]">
-              Questions: {questionUsage.used} / {questionUsage.limit} Used
+              {t("questionsUsed", {
+                used: questionUsage.used,
+                limit: questionUsage.limit,
+              })}
             </p>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
               <div
@@ -914,7 +923,7 @@ function ChatPage() {
           }`}
         >
           <FolderOpen size={18} />
-          KNOWLEDGE BASE
+          {t("knowledgeBase")}
         </button>
         <button
           type="button"
@@ -926,7 +935,7 @@ function ChatPage() {
           }`}
         >
           <MessageSquare size={18} />
-          PRIVA AI CHAT
+          {t("privaAiChat")}
         </button>
       </div>
 
@@ -937,7 +946,7 @@ function ChatPage() {
           className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#041C15]/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#A3B8B0] transition-all hover:bg-red-900/20 hover:text-red-400"
         >
           <LogOut size={16} />
-          LOGOUT
+          {t("logout")}
         </button>
       </div>
     </>
@@ -966,7 +975,7 @@ function ChatPage() {
           <button
             type="button"
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
-            aria-label="Close navigation menu"
+            aria-label={t("closeNavMenu")}
             onClick={() => setMobileNavOpen(false)}
           />
         ) : null}
@@ -979,12 +988,12 @@ function ChatPage() {
           aria-hidden={!mobileNavOpen}
         >
           <div className="flex shrink-0 items-center justify-between border-b border-[#00E699]/10 px-4 py-3">
-            <p className="text-sm font-semibold text-white">Navigation</p>
+            <p className="text-sm font-semibold text-white">{t("navigation")}</p>
             <button
               type="button"
               onClick={() => setMobileNavOpen(false)}
               className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
-              aria-label="Close navigation menu"
+              aria-label={t("closeNavMenu")}
             >
               <X size={18} />
             </button>
@@ -1009,14 +1018,14 @@ function ChatPage() {
             type="button"
             onClick={() => setMobileNavOpen(true)}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
-            aria-label="Open navigation menu"
+            aria-label={t("openNavMenu")}
             aria-expanded={mobileNavOpen}
           >
             <Menu size={20} />
           </button>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-white">
-              {activeTab === "chat" ? "PRIVA AI Chat" : "Knowledge Base"}
+              {activeTab === "chat" ? t("privaAiChatTitle") : t("knowledgeBaseTitle")}
             </p>
             <p className="truncate text-xs text-[#A3B8B0]">{companyLabel}</p>
           </div>
@@ -1026,7 +1035,7 @@ function ChatPage() {
             {/* Chat header */}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:px-6 sm:py-4">
               <h3 className="text-sm font-semibold text-white sm:text-base">
-                PRIVA AI Chat
+                {t("privaAiChatTitle")}
               </h3>
               <button
                 type="button"
@@ -1034,8 +1043,8 @@ function ChatPage() {
                 className="flex min-h-[40px] items-center gap-2 rounded-lg bg-[#041C15]/60 px-3 py-2 text-xs font-medium text-[#A3B8B0] transition-all hover:bg-[#00E699]/10 hover:text-[#00E699]"
               >
                 <Trash2 size={14} />
-                <span className="hidden sm:inline">Reset Discussion</span>
-                <span className="sm:hidden">Reset</span>
+                <span className="hidden sm:inline">{t("resetDiscussion")}</span>
+                <span className="sm:hidden">{t("reset")}</span>
               </button>
             </div>
 
@@ -1120,7 +1129,7 @@ function ChatPage() {
                         className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
                         style={{ animationDelay: "400ms" }}
                       />
-                      &nbsp;PRIVA AI is thinking...
+                      &nbsp;{t("aiThinking")}
                     </span>
                   </div>
                 </div>
@@ -1132,7 +1141,7 @@ function ChatPage() {
             <div className="shrink-0 border-t border-[#00E699]/10 p-3 backdrop-blur-sm sm:p-4">
               {currentFolder ? (
                 <p className="mb-2 text-xs text-[#00E699]/90">
-                  Chat scoped to folder:{" "}
+                  {t("chatScopedToFolder")}{" "}
                   <span className="font-semibold text-white">{currentFolder.name}</span>
                 </p>
               ) : null}
@@ -1143,8 +1152,8 @@ function ChatPage() {
                   onKeyDown={(e) => e.key === "Enter" && handleSend()}
                   placeholder={
                     currentFolder
-                      ? `Ask about files in "${currentFolder.name}"…`
-                      : "Ask using your knowledge base…"
+                      ? t("askAboutFolder", { folderName: currentFolder.name })
+                      : t("askKnowledgeBase")
                   }
                   className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-[#00E699]/20 bg-[#041C15]/50 px-4 py-3 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699]/50 focus:ring-1 focus:ring-[#00E699]/30"
                 />
@@ -1159,7 +1168,7 @@ function ChatPage() {
                   }}
                 >
                   <Send size={16} />
-                  SEND
+                  {t("send")}
                 </button>
               </div>
             </div>
@@ -1170,7 +1179,7 @@ function ChatPage() {
             <div className="flex shrink-0 flex-col gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-white sm:text-base">
-                  Knowledge Base
+                  {t("knowledgeBaseTitle")}
                 </h3>
                 <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-[#A3B8B0]">
                   <button
@@ -1190,13 +1199,9 @@ function ChatPage() {
                       currentFolderId ? handleDropOnTarget(ROOT_DROP_ID) : undefined
                     }
                     className={`rounded px-1 transition-colors hover:text-[#00E699] ${!currentFolderId ? "font-semibold text-white" : ""} ${currentFolderId ? dropHighlightClass(ROOT_DROP_ID) : ""}`}
-                    title={
-                      currentFolderId
-                        ? "Drop here to move document to root"
-                        : undefined
-                    }
+                    title={currentFolderId ? t("dropToRoot") : undefined}
                   >
-                    Root
+                    {t("root")}
                   </button>
                   {currentFolder ? (
                     <>
@@ -1208,9 +1213,9 @@ function ChatPage() {
                   ) : null}
                 </div>
                 <p className="mt-0.5 text-xs text-[#A3B8B0]">
-                  {safeDocs.length} document{safeDocs.length === 1 ? "" : "s"} in this view
+                  {t("documentsInView", { count: safeDocs.length })}
                   {!currentFolderId && safeFolders.length > 0
-                    ? ` · ${safeFolders.length} folder${safeFolders.length === 1 ? "" : "s"}`
+                    ? ` · ${t("foldersCount", { count: safeFolders.length })}`
                     : ""}
                 </p>
               </div>
@@ -1220,10 +1225,10 @@ function ChatPage() {
                   onClick={() => setFolderModalOpen(true)}
                   disabled={docsUploading || Boolean(currentFolderId)}
                   className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-[#00E699]/25 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#00E699] transition-all hover:bg-[#054232]/40 disabled:opacity-40 sm:w-auto"
-                  title={currentFolderId ? "Create folders from the root view" : undefined}
+                  title={currentFolderId ? t("createFoldersFromRoot") : undefined}
                 >
                   <Folder size={14} />
-                  New Folder
+                  {t("newFolder")}
                 </button>
                 <button
                   type="button"
@@ -1236,7 +1241,7 @@ function ChatPage() {
                   }}
                 >
                   <Upload size={14} />
-                  {docsUploading ? "Uploading..." : "Upload Document"}
+                  {docsUploading ? t("uploading") : t("uploadDocument")}
                 </button>
               </div>
               <input
@@ -1259,20 +1264,20 @@ function ChatPage() {
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
               {draggingDocId && !currentFolderId ? (
                 <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
-                  Drag a file onto a folder to move it.
+                  {t("dragFileToFolder")}
                 </p>
               ) : null}
               {draggingDocId && currentFolderId ? (
                 <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
-                  Drop on <span className="font-semibold">Root</span> or go back to move
-                  into another folder.
+                  {t("dropOnRootPrefix")}{" "}
+                  <span className="font-semibold">{t("root")}</span> {t("dropOnRootSuffix")}
                 </p>
               ) : null}
 
               {docsLoading ? (
                 <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-[#A3B8B0]">
                   <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]" />
-                  Loading documents...
+                  {t("loadingDocuments")}
                 </div>
               ) : !currentFolderId && safeFolders.length === 0 && safeDocs.length === 0 ? (
                 <div
@@ -1282,32 +1287,23 @@ function ChatPage() {
                     size={32}
                     className="mx-auto mb-3 text-[#00E699]/60"
                   />
-                  <p className="text-sm font-medium text-white">
-                    No documents yet
-                  </p>
-                  <p className="mt-1 text-xs text-[#A3B8B0]">
-                    Create a folder or upload a file to build your knowledge base.
-                  </p>
+                  <p className="text-sm font-medium text-white">{t("noDocumentsYet")}</p>
+                  <p className="mt-1 text-xs text-[#A3B8B0]">{t("noDocumentsHint")}</p>
                 </div>
               ) : currentFolderId && safeDocs.length === 0 ? (
                 <div
                   className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm"
                 >
                   <Folder size={32} className="mx-auto mb-3 text-[#00E699]/60" />
-                  <p className="text-sm font-medium text-white">
-                    This folder is empty
-                  </p>
-                  <p className="mt-1 text-xs text-[#A3B8B0]">
-                    Upload a document here. Chat in this folder will only use files
-                    inside it.
-                  </p>
+                  <p className="text-sm font-medium text-white">{t("folderEmpty")}</p>
+                  <p className="mt-1 text-xs text-[#A3B8B0]">{t("folderEmptyHint")}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {!currentFolderId && safeFolders.length > 0 ? (
                     <div>
                       <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
-                        Folders
+                        {t("folders")}
                       </div>
                       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {safeFolders.map((folder) => (
@@ -1336,9 +1332,7 @@ function ChatPage() {
                                   {folder.name}
                                 </p>
                                 <p className="mt-0.5 text-xs text-[#A3B8B0]">
-                                  {draggingDocId
-                                    ? "Drop file here"
-                                    : "Open folder"}
+                                  {draggingDocId ? t("dropFileHere") : t("openFolder")}
                                 </p>
                               </div>
                               <ChevronRight size={16} className="shrink-0 text-[#00E699]/70" />
@@ -1352,7 +1346,7 @@ function ChatPage() {
                   {safeDocs.length > 0 ? (
                     <div>
                       <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
-                        Documents
+                        {t("documents")}
                       </div>
                       <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {safeDocs.map((doc) => (
@@ -1366,7 +1360,7 @@ function ChatPage() {
                               draggingDocId === doc.id ? "opacity-50" : ""
                             } ${movingDocId === doc.id ? "pointer-events-none opacity-40" : "cursor-grab active:cursor-grabbing"}`}
                             style={{ background: "rgba(4, 28, 21, 0.55)" }}
-                            title="Drag to a folder to move"
+                            title={t("dragToFolder")}
                           >
                             <div className="flex min-w-0 flex-1 items-start gap-3">
                               <span
@@ -1393,8 +1387,8 @@ function ChatPage() {
                                 onClick={() => handleDeleteDoc(doc.id)}
                                 onTouchStart={(e) => e.stopPropagation()}
                                 className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-transparent px-3 py-2 text-base transition-all hover:border-red-500/30 hover:bg-red-900/25"
-                                aria-label={`Delete ${doc.filename}`}
-                                title="Delete document"
+                                aria-label={t("deleteDocumentNamed", { name: doc.filename })}
+                                title={t("deleteDocument")}
                               >
                                 🗑️
                               </button>

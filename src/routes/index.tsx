@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Info, X } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   API_BASE,
   buildClientHeaders,
@@ -14,12 +15,14 @@ import {
   setFaceVerifiedForToken,
 } from "../lib/api";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
+import { LanguageSwitcher } from "../components/LanguageSwitcher";
 
 export const Route = createFileRoute("/")({
   component: LoginPage,
 });
 
 function LoginPage() {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [username, setUsername] = useState("");
@@ -59,18 +62,15 @@ function LoginPage() {
 
       if (res.status === 403 && err.error === "USER_LIMIT_REACHED") {
         clearAuthSession();
-        setError(
-          err.message ||
-            "Users limit reached. Please contact the administrator to upgrade your plan.",
-        );
+        setError(err.message || t("usersLimitReached"));
         return;
       }
 
       clearAuthSession();
-      setError(err.message || err.error || "Invalid credentials");
+      setError(err.message || err.error || t("invalidCredentials"));
     } catch (err) {
       setError(
-        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : "Login failed. Please try again.",
+        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"),
       );
     } finally {
       setIsLoading(false);
@@ -128,13 +128,13 @@ function LoginPage() {
               isSidebarOpen ? "p-6 opacity-100" : "p-0 opacity-0"
             }`}
           >
-            <h2 className="text-lg font-bold text-white">PRIVA AI SANDBOX</h2>
+            <h2 className="text-lg font-bold text-white">{t("sandboxTitle")}</h2>
             <p className="mt-1 text-xs text-[#A3B8B0]">
-              Access Mode:{" "}
-              <span className="text-[#00E699]">Free Trial</span>
+              {t("accessMode")}{" "}
+              <span className="text-[#00E699]">{t("freeTrial")}</span>
             </p>
             <p className="mt-3 text-xs leading-relaxed text-[#A3B8B0]">
-              Explore sovereign AI in a secure sandbox before full onboarding.
+              {t("sandboxDescription")}
             </p>
           </div>
 
@@ -144,15 +144,9 @@ function LoginPage() {
             }`}
           >
             <div className="space-y-2 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
-              <p className="text-xs text-[#A3B8B0]">
-                • 5 Sovereign AI Queries every 24 hours
-              </p>
-              <p className="text-xs text-[#A3B8B0]">
-                • 5MB Dedicated Knowledge Base Storage
-              </p>
-              <p className="text-xs text-[#A3B8B0]">
-                • Full Local OCR & Document Intelligence
-              </p>
+              <p className="text-xs text-[#A3B8B0]">{t("trialFeatureQueries")}</p>
+              <p className="text-xs text-[#A3B8B0]">{t("trialFeatureStorage")}</p>
+              <p className="text-xs text-[#A3B8B0]">{t("trialFeatureOcr")}</p>
             </div>
           </div>
 
@@ -167,7 +161,7 @@ function LoginPage() {
               disabled={isLoading}
               className="flex w-full items-center justify-center rounded-xl bg-[#054232] px-4 py-3 text-sm font-semibold text-white shadow-[0_0_12px_rgba(5,66,50,0.5)] transition-all hover:brightness-110 disabled:opacity-50"
             >
-              {isLoading ? "Starting..." : "START FREE TRIAL"}
+              {isLoading ? t("starting") : t("startFreeTrial")}
             </button>
           </div>
         </aside>
@@ -176,9 +170,9 @@ function LoginPage() {
           <button
             type="button"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            title={isSidebarOpen ? "Collapse sidebar" : "Open sidebar"}
+            title={isSidebarOpen ? t("collapseSidebar") : t("openSidebar")}
             className="absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-[#A3B8B0] backdrop-blur-md transition-all hover:bg-[#054232]/40 hover:text-white"
-            aria-label={isSidebarOpen ? "Collapse sidebar" : "Open sidebar"}
+            aria-label={isSidebarOpen ? t("collapseSidebar") : t("openSidebar")}
           >
             <span className="text-sm">{isSidebarOpen ? "◀" : "▶"}</span>
           </button>
@@ -198,26 +192,26 @@ function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-5 sm:space-y-6 md:space-y-7">
               <div>
                 <label className="mb-2 block text-xs font-medium tracking-wider text-[#A3B8B0] uppercase sm:text-sm">
-                  Username
+                  {t("username")}
                 </label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 sm:px-5 sm:py-4 sm:text-base md:py-4"
-                  placeholder="Enter username"
+                  placeholder={t("enterUsername")}
                 />
               </div>
               <div>
                 <label className="mb-2 block text-xs font-medium tracking-wider text-[#A3B8B0] uppercase sm:text-sm">
-                  Password
+                  {t("password")}
                 </label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 sm:px-5 sm:py-4 sm:text-base md:py-4"
-                  placeholder="Enter password"
+                  placeholder={t("enterPassword")}
                 />
               </div>
 
@@ -239,7 +233,7 @@ function LoginPage() {
                   boxShadow: "0 0 16px rgba(5, 66, 50, 0.5)",
                 }}
               >
-                {isLoading ? "Authenticating..." : "ACCESS SYSTEM"}
+                {isLoading ? t("authenticating") : t("accessSystem")}
               </button>
             </form>
           </div>
@@ -250,8 +244,8 @@ function LoginPage() {
         type="button"
         onClick={() => setInfoOpen(true)}
         className="fixed bottom-24 right-6 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-[#00E699]/35 bg-[#041C15]/80 text-[#00E699] shadow-[0_0_16px_rgba(0,230,153,0.15)] backdrop-blur-md transition-all hover:border-[#00E699]/60 hover:bg-[#054232]/90 hover:text-white"
-        aria-label="About PRIVA AI"
-        title="About"
+        aria-label={t("aboutTitle")}
+        title={t("about")}
       >
         <Info size={20} strokeWidth={2.25} />
       </button>
@@ -268,6 +262,7 @@ function LoginPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="login-info-title"
+            dir={i18n.dir()}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-3">
@@ -281,7 +276,7 @@ function LoginPage() {
                 type="button"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 text-[#A3B8B0] transition-colors hover:bg-[#054232]/50 hover:text-white"
                 onClick={() => setInfoOpen(false)}
-                aria-label="Close"
+                aria-label={t("close")}
               >
                 <X size={18} />
               </button>
@@ -290,43 +285,37 @@ function LoginPage() {
             <section className="max-h-[min(70vh,28rem)] space-y-4 overflow-y-auto pr-1">
               <div>
                 <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
-                  About PRIVA AI
+                  {t("aboutTitle")}
                 </h3>
                 <p className="mt-1.5 text-sm leading-relaxed text-[#D5FBEA]/90">
-                  PRIVA AI is an advanced, sovereign sandbox platform engineered for secure
-                  data interaction. It provides a private environment where your data remains
-                  localized, ensuring total privacy while utilizing intelligent document
-                  processing, high-precision OCR, and context-aware AI analysis.
+                  {t("aboutDescription")}
                 </p>
               </div>
 
               <div>
                 <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
-                  How to use
+                  {t("howToUse")}
                 </h3>
                 <ul className="mt-2 space-y-2.5 text-sm leading-relaxed text-[#A3B8B0]">
                   <li>
-                    <span className="font-semibold text-[#D5FBEA]">Access:</span> Log in
-                    with your credentials to enter the secure dashboard.
+                    <span className="font-semibold text-[#D5FBEA]">{t("howToAccessLabel")}</span>{" "}
+                    {t("howToAccessDesc")}
                   </li>
                   <li>
-                    <span className="font-semibold text-[#D5FBEA]">Verify:</span> Complete
-                    the initial system handshake for identity verification.
+                    <span className="font-semibold text-[#D5FBEA]">{t("howToVerifyLabel")}</span>{" "}
+                    {t("howToVerifyDesc")}
                   </li>
                   <li>
-                    <span className="font-semibold text-[#D5FBEA]">Upload:</span> Drag and
-                    drop your documents (PDF/Images) into the Knowledge Base; the system
-                    automatically performs OCR and indexing.
+                    <span className="font-semibold text-[#D5FBEA]">{t("howToUploadLabel")}</span>{" "}
+                    {t("howToUploadDesc")}
                   </li>
                   <li>
-                    <span className="font-semibold text-[#D5FBEA]">Analyze:</span> Use the
-                    AI Chat to ask questions, summarize documents, or extract specific data
-                    from your uploaded files.
+                    <span className="font-semibold text-[#D5FBEA]">{t("howToAnalyzeLabel")}</span>{" "}
+                    {t("howToAnalyzeDesc")}
                   </li>
                   <li>
-                    <span className="font-semibold text-[#D5FBEA]">Manage:</span> Monitor
-                    your remaining queries and storage status directly from the dashboard
-                    sidebar.
+                    <span className="font-semibold text-[#D5FBEA]">{t("howToManageLabel")}</span>{" "}
+                    {t("howToManageDesc")}
                   </li>
                 </ul>
               </div>
@@ -335,10 +324,10 @@ function LoginPage() {
 
               <div>
                 <h3 className="text-xs font-bold tracking-widest text-[#00E699] uppercase">
-                  Support
+                  {t("support")}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-[#A3B8B0]">
-                  For technical assistance, email us at:{" "}
+                  {t("supportDescription")}{" "}
                   <a
                     href="mailto:privaai.uae@gmail.com"
                     className="font-medium text-[#00E699] underline-offset-2 hover:underline"
@@ -346,6 +335,9 @@ function LoginPage() {
                     privaai.uae@gmail.com
                   </a>
                 </p>
+                <div className="mt-4">
+                  <LanguageSwitcher />
+                </div>
               </div>
             </section>
           </div>

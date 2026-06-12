@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { I18nextProvider, useTranslation } from "react-i18next";
 import {
   Outlet,
   Link,
@@ -14,8 +15,11 @@ import { ApiRetryNotifier } from "../components/ApiRetryNotifier";
 import { Toaster } from "../components/ui/sonner";
 import { TawkRouteGate } from "../components/TawkRouteGate";
 import { useClientSecurityDefense } from "../hooks/useClientSecurityDefense";
+import i18n from "../i18n";
 
 function LoadingScreen() {
+  const { t, i18n } = useTranslation();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#041C15] px-4">
       <div className="flex flex-col items-center gap-4 text-center">
@@ -23,34 +27,29 @@ function LoadingScreen() {
           className="inline-block h-10 w-10 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]"
           aria-hidden
         />
-        <div className="space-y-1">
-          <p className="text-sm font-medium text-[#D5FBEA] sm:text-base" dir="rtl">
-            جاري تهيئة الذكاء الاصطناعي...
-          </p>
-          <p className="text-xs text-[#A3B8B0] sm:text-sm">
-            Initializing AI, please wait...
-          </p>
-        </div>
+        <p className="text-sm font-medium text-[#D5FBEA] sm:text-base" dir={i18n.dir()}>
+          {t("initializingAi")}
+        </p>
       </div>
     </div>
   );
 }
 
 function NotFoundComponent() {
+  const { t } = useTranslation();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">{t("pageNotFound")}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("pageNotFoundDesc")}</p>
         <div className="mt-6">
           <Link
             to="/"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go home
+            {t("goHome")}
           </Link>
         </div>
       </div>
@@ -61,16 +60,15 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const { t } = useTranslation();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+          {t("errorPageTitle")}
         </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">{t("errorPageDesc")}</p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -79,13 +77,13 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Try again
+            {t("tryAgain")}
           </button>
           <a
             href="/"
             className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
+            {t("goHome")}
           </a>
         </div>
       </div>
@@ -232,11 +230,13 @@ function RootComponent() {
   useClientSecurityDefense();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TawkRouteGate />
-      <ApiRetryNotifier />
-      {isLoading ? <LoadingScreen /> : <Outlet />}
-      <Toaster position="top-center" richColors closeButton duration={6000} />
-    </QueryClientProvider>
+    <I18nextProvider i18n={i18n}>
+      <QueryClientProvider client={queryClient}>
+        <TawkRouteGate />
+        <ApiRetryNotifier />
+        {isLoading ? <LoadingScreen /> : <Outlet />}
+        <Toaster position="top-center" richColors closeButton duration={6000} />
+      </QueryClientProvider>
+    </I18nextProvider>
   );
 }
