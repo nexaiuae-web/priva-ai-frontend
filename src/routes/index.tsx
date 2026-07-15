@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { Info, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   API_BASE,
@@ -21,31 +22,127 @@ export const Route = createFileRoute("/")({
   component: LoginPage,
 });
 
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() || "";
+const DEFAULT_RATE_LIMIT_SECONDS = 5 * 60;
+
+type LoginErrorBody = {
+  error?: string;
+  message?: string;
+  requireCaptcha?: boolean;
+  retryAfter?: number;
+  retry_after?: number;
+};
+
+function parseRetryAfterSeconds(res: Response, body: LoginErrorBody): number {
+  const header = res.headers.get("Retry-After");
+  if (header) {
+    const asNumber = Number(header);
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      return Math.ceil(asNumber);
+    }
+    const asDate = Date.parse(header);
+    if (!Number.isNaN(asDate)) {
+      const seconds = Math.ceil((asDate - Date.now()) / 1000);
+      if (seconds > 0) return seconds;
+    }
+  }
+
+  const fromBody = body.retryAfter ?? body.retry_after;
+  if (typeof fromBody === "number" && Number.isFinite(fromBody) && fromBody > 0) {
+    return Math.ceil(fromBody);
+  }
+
+  return DEFAULT_RATE_LIMIT_SECONDS;
+}
+
+function formatCountdown(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.ceil(totalSeconds));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins <= 0) {
+    return `${secs}s`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 function LoginPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [showCaptcha, setShowCaptcha] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
+  const [rateLimitRemainingSeconds, setRateLimitRemainingSeconds] = useState(0);
+
+  const isRateLimited =
+    rateLimitedUntil !== null && rateLimitRemainingSeconds > 0;
+
+  useEffect(() => {
+    if (rateLimitedUntil === null) {
+      setRateLimitRemainingSeconds(0);
+      return;
+    }
+
+    const updateRemaining = () => {
+      const remainingMs = rateLimitedUntil - Date.now();
+      if (remainingMs <= 0) {
+        setRateLimitedUntil(null);
+        setRateLimitRemainingSeconds(0);
+        setError("");
+        return;
+      }
+      setRateLimitRemainingSeconds(Math.ceil(remainingMs / 1000));
+    };
+
+    updateRemaining();
+    const id = window.setInterval(updateRemaining, 1000);
+    return () => window.clearInterval(id);
+  }, [rateLimitedUntil]);
+
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    turnstileRef.current?.reset();
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRateLimited) return;
+
+    if (showCaptcha && !captchaToken) {
+      setError(t("captchaRequired"));
+      return;
+    }
+
     setError("");
     setIsLoading(true);
 
     try {
       persistPlanMode("premium");
       clearWorkspaceClientState();
+
+      const payload: {
+        username: string;
+        password: string;
+        captchaToken?: string;
+      } = { username, password };
+
+      if (showCaptcha && captchaToken) {
+        payload.captchaToken = captchaToken;
+      }
+
       const res = await fetchWithRetry(`${API_BASE}/api/login`, {
         method: "POST",
         headers: await buildClientHeaders({
           contentType: "application/json",
           planMode: "premium",
         }),
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -55,23 +152,39 @@ function LoginPage() {
         return;
       }
 
-      const err = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
+      const err = (await res.json().catch(() => ({}))) as LoginErrorBody;
+
+      if (res.status === 429) {
+        clearAuthSession();
+        const retrySeconds = parseRetryAfterSeconds(res, err);
+        setRateLimitedUntil(Date.now() + retrySeconds * 1000);
+        setRateLimitRemainingSeconds(retrySeconds);
+        setError(
+          t("tooManyAttempts", { time: formatCountdown(retrySeconds) }),
+        );
+        resetCaptcha();
+        return;
+      }
 
       if (res.status === 403 && err.error === "USER_LIMIT_REACHED") {
         clearAuthSession();
         setError(err.message || t("usersLimitReached"));
+        resetCaptcha();
         return;
       }
 
+      if (res.status === 403 || err.requireCaptcha === true) {
+        setShowCaptcha(true);
+      }
+
       clearAuthSession();
-      setError(err.message || err.error || t("invalidCredentials"));
+      setError(t("invalidCredentials"));
+      resetCaptcha();
     } catch (err) {
       setError(
         isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"),
       );
+      resetCaptcha();
     } finally {
       setIsLoading(false);
     }
@@ -99,6 +212,10 @@ function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  const rateLimitMessage = isRateLimited
+    ? t("tooManyAttempts", { time: formatCountdown(rateLimitRemainingSeconds) })
+    : error;
 
   return (
     <div className="relative h-screen max-h-screen h-dvh max-h-dvh min-h-0 w-full overflow-hidden">
@@ -198,7 +315,8 @@ function LoginPage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 sm:px-5 sm:py-4 sm:text-base md:py-4"
+                  disabled={isRateLimited}
+                  className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base md:py-4"
                   placeholder={t("enterUsername")}
                 />
               </div>
@@ -210,24 +328,42 @@ function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 sm:px-5 sm:py-4 sm:text-base md:py-4"
+                  disabled={isRateLimited}
+                  className="w-full rounded-lg border border-[#00E699]/30 bg-[#041C15]/60 px-4 py-3.5 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699] focus:ring-1 focus:ring-[#00E699]/40 disabled:opacity-50 sm:px-5 sm:py-4 sm:text-base md:py-4"
                   placeholder={t("enterPassword")}
                 />
               </div>
 
-              {error && (
+              {showCaptcha && !isRateLimited && TURNSTILE_SITE_KEY ? (
+                <div className="flex justify-center">
+                  <Turnstile
+                    ref={turnstileRef}
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onSuccess={(token) => setCaptchaToken(token)}
+                    onExpire={() => setCaptchaToken("")}
+                    onError={() => setCaptchaToken("")}
+                    options={{ theme: "dark" }}
+                  />
+                </div>
+              ) : null}
+
+              {(error || isRateLimited) && (
                 <div
                   role="alert"
-                  className="rounded-lg border border-red-500/50 bg-red-950/40 px-4 py-3 text-sm text-red-400 sm:text-base"
+                  className={`rounded-lg px-4 py-3 text-sm sm:text-base ${
+                    isRateLimited
+                      ? "border border-amber-500/50 bg-amber-950/40 text-amber-300"
+                      : "border border-red-500/50 bg-red-950/40 text-red-400"
+                  }`}
                 >
-                  {error}
+                  {rateLimitMessage}
                 </div>
               )}
 
               <button
                 type="submit"
-                disabled={isLoading}
-                className="w-full rounded-lg py-3.5 text-sm font-bold tracking-widest text-white uppercase transition-all hover:brightness-110 disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
+                disabled={isLoading || isRateLimited}
+                className="w-full rounded-lg py-3.5 text-sm font-bold tracking-widest text-white uppercase transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
                 style={{
                   background: "#054232",
                   boxShadow: "0 0 16px rgba(5, 66, 50, 0.5)",
