@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Turnstile, type TurnstileInstance } from "@marsidev/react-turnstile";
 import { Info, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import ReCAPTCHA from "react-google-recaptcha";
 import { useTranslation } from "react-i18next";
 import {
   API_BASE,
@@ -22,7 +22,10 @@ export const Route = createFileRoute("/")({
   component: LoginPage,
 });
 
-const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() || "";
+/** Google's official free reCAPTCHA v2 testing site key (always passes). */
+const GOOGLE_RECAPTCHA_TEST_SITE_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI";
+const RECAPTCHA_SITE_KEY =
+  import.meta.env.VITE_RECAPTCHA_SITE_KEY?.trim() || GOOGLE_RECAPTCHA_TEST_SITE_KEY;
 const DEFAULT_RATE_LIMIT_SECONDS = 5 * 60;
 
 type LoginErrorBody = {
@@ -68,7 +71,7 @@ function formatCountdown(totalSeconds: number): string {
 function LoginPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const turnstileRef = useRef<TurnstileInstance | null>(null);
+  const recaptchaRef = useRef<ReCAPTCHA | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -107,7 +110,7 @@ function LoginPage() {
 
   const resetCaptcha = () => {
     setCaptchaToken("");
-    turnstileRef.current?.reset();
+    recaptchaRef.current?.reset();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -334,15 +337,15 @@ function LoginPage() {
                 />
               </div>
 
-              {showCaptcha && !isRateLimited && TURNSTILE_SITE_KEY ? (
+              {showCaptcha && !isRateLimited ? (
                 <div className="flex justify-center">
-                  <Turnstile
-                    ref={turnstileRef}
-                    siteKey={TURNSTILE_SITE_KEY}
-                    onSuccess={(token) => setCaptchaToken(token)}
-                    onExpire={() => setCaptchaToken("")}
-                    onError={() => setCaptchaToken("")}
-                    options={{ theme: "dark" }}
+                  <ReCAPTCHA
+                    ref={recaptchaRef}
+                    sitekey={RECAPTCHA_SITE_KEY}
+                    theme="dark"
+                    onChange={(token) => setCaptchaToken(token ?? "")}
+                    onExpired={() => setCaptchaToken("")}
+                    onErrored={() => setCaptchaToken("")}
                   />
                 </div>
               ) : null}
