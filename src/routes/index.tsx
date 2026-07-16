@@ -79,12 +79,13 @@ function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [showCaptcha, setShowCaptcha] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
   const [rateLimitRemainingSeconds, setRateLimitRemainingSeconds] = useState(0);
 
   const isRateLimited =
     rateLimitedUntil !== null && rateLimitRemainingSeconds > 0;
+  const awaitingCaptchaSolve = showCaptcha && !captchaToken;
 
   useEffect(() => {
     if (rateLimitedUntil === null) {
@@ -108,14 +109,23 @@ function LoginPage() {
     return () => window.clearInterval(id);
   }, [rateLimitedUntil]);
 
-  const resetCaptcha = () => {
-    setCaptchaToken("");
+  const clearCaptchaToken = () => {
+    setCaptchaToken(null);
     recaptchaRef.current?.reset();
+  };
+
+  const handleCaptchaChange = (token: string | null) => {
+    if (token) {
+      setCaptchaToken(token);
+      setShowCaptcha(false);
+      return;
+    }
+    setCaptchaToken(null);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRateLimited) return;
+    if (isRateLimited || awaitingCaptchaSolve) return;
 
     if (showCaptcha && !captchaToken) {
       setError(t("captchaRequired"));
@@ -135,7 +145,7 @@ function LoginPage() {
         captchaToken?: string;
       } = { username, password };
 
-      if (showCaptcha && captchaToken) {
+      if (captchaToken) {
         payload.captchaToken = captchaToken;
       }
 
@@ -157,37 +167,44 @@ function LoginPage() {
 
       const err = (await res.json().catch(() => ({}))) as LoginErrorBody;
 
+      // Always drop the used/invalid token so a fresh challenge is required next time.
+      clearCaptchaToken();
+
       if (res.status === 429) {
         clearAuthSession();
+        setShowCaptcha(false);
         const retrySeconds = parseRetryAfterSeconds(res, err);
         setRateLimitedUntil(Date.now() + retrySeconds * 1000);
         setRateLimitRemainingSeconds(retrySeconds);
         setError(
           t("tooManyAttempts", { time: formatCountdown(retrySeconds) }),
         );
-        resetCaptcha();
         return;
       }
 
       if (res.status === 403 && err.error === "USER_LIMIT_REACHED") {
         clearAuthSession();
+        setShowCaptcha(false);
         setError(err.message || t("usersLimitReached"));
-        resetCaptcha();
         return;
       }
 
+      // Only show reCAPTCHA when backend explicitly requires it (403 / requireCaptcha).
+      // Standard 401s (first failures) do not reveal the widget.
       if (res.status === 403 || err.requireCaptcha === true) {
         setShowCaptcha(true);
+      } else {
+        setShowCaptcha(false);
       }
 
       clearAuthSession();
       setError(t("invalidCredentials"));
-      resetCaptcha();
     } catch (err) {
+      clearCaptchaToken();
+      setShowCaptcha(false);
       setError(
         isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"),
       );
-      resetCaptcha();
     } finally {
       setIsLoading(false);
     }
@@ -343,9 +360,9 @@ function LoginPage() {
                     ref={recaptchaRef}
                     sitekey={RECAPTCHA_SITE_KEY}
                     theme="dark"
-                    onChange={(token) => setCaptchaToken(token ?? "")}
-                    onExpired={() => setCaptchaToken("")}
-                    onErrored={() => setCaptchaToken("")}
+                    onChange={handleCaptchaChange}
+                    onExpired={() => setCaptchaToken(null)}
+                    onErrored={() => setCaptchaToken(null)}
                   />
                 </div>
               ) : null}
@@ -365,7 +382,7 @@ function LoginPage() {
 
               <button
                 type="submit"
-                disabled={isLoading || isRateLimited}
+                disabled={isLoading || isRateLimited || awaitingCaptchaSolve}
                 className="w-full rounded-lg py-3.5 text-sm font-bold tracking-widest text-white uppercase transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
                 style={{
                   background: "#054232",
