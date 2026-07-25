@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { RequireAuth } from "../components/RequireAuth";
 import {
   clearAuthSession,
   FACE_PROFILE_NOT_CONFIGURED_MESSAGE,
@@ -11,13 +12,26 @@ import {
   setFaceVerifiedForToken,
   verifyFaceSnapshot,
 } from "../lib/api";
+import { enforceLoginSession } from "../lib/authGuard";
 import { preprocessFaceCaptureCanvas } from "../lib/faceCapturePreprocess";
 import { analyzeFaceFrame } from "../lib/faceDetectionGuide";
 
 const FACE_DETECTION_INTERVAL_MS = 280;
 
+function ProtectedVerifyFacePage() {
+  return (
+    <RequireAuth requireFaceId={false}>
+      <VerifyFacePage />
+    </RequireAuth>
+  );
+}
+
 export const Route = createFileRoute("/verify-face")({
-  component: VerifyFacePage,
+  component: ProtectedVerifyFacePage,
+  ssr: false,
+  beforeLoad: () => {
+    enforceLoginSession();
+  },
 });
 
 function VerifyFacePage() {
@@ -255,16 +269,17 @@ function VerifyFacePage() {
   useEffect(() => {
     const session = loadAuthSession();
     if (!session?.token) {
-      navigate({ to: "/" });
+      clearAuthSession();
+      void navigate({ to: "/", replace: true });
       return;
     }
     if (isE2eFaceBypassEnabled && session.username?.trim()) {
       setFaceVerifiedForToken(session.token);
-      navigate({ to: "/chat" });
+      void navigate({ to: "/chat" });
       return;
     }
     if (isFaceVerifiedForCurrentSession()) {
-      navigate({ to: "/chat" });
+      void navigate({ to: "/chat" });
       return;
     }
 

@@ -19,7 +19,9 @@ import { useKnowledgeBaseDragDrop } from "../hooks/useKnowledgeBaseDragDrop";
 import { NewFolderModal } from "../components/NewFolderModal";
 import { AssistantMessage } from "../components/AssistantMessage";
 import { ChatMessageActions } from "../components/ChatMessageActions";
+import { RequireAuth } from "../components/RequireAuth";
 import { UploadProgressCard } from "../components/UploadProgressCard";
+import { enforceChatAccess, hasFullChatAccess } from "../lib/authGuard";
 import {
   API_BASE,
   BACKEND_UNREACHABLE_MESSAGE,
@@ -41,7 +43,6 @@ import {
   extractStreamContent,
   formatDocumentDate,
   isBackendUnreachableError,
-  isFaceVerifiedForCurrentSession,
   loadAuthSession,
   normalizeDocuments,
   type PlanMode,
@@ -88,9 +89,20 @@ import {
 } from "../lib/chatSessionStorage";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
+function ProtectedChatPage() {
+  return (
+    <RequireAuth requireFaceId>
+      <ChatPage />
+    </RequireAuth>
+  );
+}
+
 export const Route = createFileRoute("/chat")({
-  component: ChatPage,
+  component: ProtectedChatPage,
   ssr: false,
+  beforeLoad: () => {
+    enforceChatAccess();
+  },
 });
 
 interface ChatMessage extends StoredChatMessage {
@@ -156,15 +168,20 @@ function ChatPage() {
   );
 
   useEffect(() => {
+    // Defense in depth — beforeLoad + RequireAuth already enforce this.
+    if (!hasFullChatAccess()) {
+      clearAuthSession();
+      void navigate({ to: "/", replace: true });
+      return;
+    }
+
     const session = loadAuthSession();
     if (!session?.token) {
-      navigate({ to: "/" });
+      clearAuthSession();
+      void navigate({ to: "/", replace: true });
       return;
     }
-    if (loadPlanMode() !== "free_trial" && !isFaceVerifiedForCurrentSession()) {
-      navigate({ to: "/verify-face" });
-      return;
-    }
+
     void (async () => {
       if (loadPlanMode() === "free_trial") {
         await getDeviceFingerprint();
