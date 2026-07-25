@@ -51,8 +51,7 @@ function VerifyFacePage() {
   const [flashEffect, setFlashEffect] = useState(false);
   const [isLightAssistActive, setIsLightAssistActive] = useState(false);
   const isE2eFaceBypassEnabled =
-    typeof window !== "undefined" &&
-    localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
+    typeof window !== "undefined" && localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
 
   const stopFaceDetectionLoop = useCallback(() => {
     if (faceDetectionTimerRef.current != null) {
@@ -114,6 +113,8 @@ function VerifyFacePage() {
   }, [isVerifying]);
 
   const captureAndVerify = useCallback(async () => {
+    if (isVerifyingRef.current) return;
+
     const video = videoRef.current;
     const session = loadAuthSession();
 
@@ -131,31 +132,51 @@ function VerifyFacePage() {
     }
 
     setIsVerifying(true);
+    isVerifyingRef.current = true;
     setStatus("Verifying identity…");
     setError("");
     setVerificationFailed(false);
 
     try {
+      const MAX_DIMENSION = 480;
       const canvas = document.createElement("canvas");
-      const size = Math.min(video.videoWidth, video.videoHeight);
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = MAX_DIMENSION;
+      canvas.height = MAX_DIMENSION;
       const ctx = canvas.getContext("2d");
       if (!ctx) {
         throw new Error(FACE_VERIFY_FAILED_MESSAGE);
       }
 
+      const size = Math.min(video.videoWidth, video.videoHeight);
       const offsetX = (video.videoWidth - size) / 2;
       const offsetY = (video.videoHeight - size) / 2;
-      ctx.drawImage(video, offsetX, offsetY, size, size, 0, 0, size, size);
+      ctx.drawImage(video, offsetX, offsetY, size, size, 0, 0, MAX_DIMENSION, MAX_DIMENSION);
 
       const optimized = preprocessFaceCaptureCanvas(canvas);
-      const dataUrl = optimized.toDataURL("image/jpeg", 0.92);
-      const verifyResult = await verifyFaceSnapshot(dataUrl, {
-        onRetry: () => {
-          setStatus("Connection unstable, retrying…");
-        },
-      });
+      const dataUrl = optimized.toDataURL("image/jpeg", 0.7);
+
+      if (dataUrl.length > 102400) {
+        throw new Error("Captured image too large. Please try again.");
+      }
+
+      const FETCH_TIMEOUT_MS = 8000;
+      const verifyResult = await Promise.race([
+        verifyFaceSnapshot(dataUrl, {
+          onRetry: () => {
+            setStatus("Connection unstable, retrying…");
+          },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error("Verification timed out. Please check your connection and try again."),
+              ),
+            FETCH_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+
       if (!verifyResult.access_token) {
         throw new Error(FACE_VERIFY_FAILED_MESSAGE);
       }
@@ -184,6 +205,7 @@ function VerifyFacePage() {
       }
     } finally {
       setIsVerifying(false);
+      isVerifyingRef.current = false;
       setCountdown(null);
     }
   }, [clearAuth, completeFaceVerification, navigate, stopCamera]);
@@ -384,9 +406,7 @@ function VerifyFacePage() {
               disabled={isVerifying}
               className="mt-3 text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
             >
-              {isLightAssistActive
-                ? t("disableScreenFlash")
-                : t("enableScreenFlash")}
+              {isLightAssistActive ? t("disableScreenFlash") : t("enableScreenFlash")}
             </button>
           )}
 
