@@ -101,5 +101,7 @@
   "folderNamePlaceholder": "مثال: سياسات الموارد البشرية",
   "cancel": "إلغاء",
   "creating": "جاري الإنشاء…",
-  "createFolder": "إنشاء مجلد"
+  "createFolder": "إنشاء مجلد",
+  "enableScreenFlash": "💡 إضاءة الشاشة",
+  "disableScreenFlash": "💡 إيقاف إضاءة الشاشة"
 }

@@ -101,5 +101,7 @@
   "folderNamePlaceholder": "ex. Politiques RH",
   "cancel": "Annuler",
   "creating": "Création…",
-  "createFolder": "Créer le dossier"
+  "createFolder": "Créer le dossier",
+  "enableScreenFlash": "💡 Activer le flash d'écran",
+  "disableScreenFlash": "💡 Désactiver le flash d'écran"
 }

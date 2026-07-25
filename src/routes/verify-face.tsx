@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   clearAuthSession,
   FACE_PROFILE_NOT_CONFIGURED_MESSAGE,
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/verify-face")({
 
 function VerifyFacePage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureTimerRef = useRef<number | null>(null);
@@ -33,6 +35,7 @@ function VerifyFacePage() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [flashEffect, setFlashEffect] = useState(false);
+  const [isLightAssistActive, setIsLightAssistActive] = useState(false);
   const isE2eFaceBypassEnabled =
     typeof window !== "undefined" &&
     localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
@@ -139,6 +142,7 @@ function VerifyFacePage() {
         },
       });
       setFaceVerifiedForToken(session.token);
+      setIsLightAssistActive(false);
       stopCamera();
       navigate({ to: "/chat" });
     } catch (err) {
@@ -157,6 +161,7 @@ function VerifyFacePage() {
         setStatus("Connection failed — please try again");
       } else {
         setStatus("Verification failed — adjust lighting or position and try again");
+        setIsLightAssistActive(true);
       }
     } finally {
       setIsVerifying(false);
@@ -217,6 +222,7 @@ function VerifyFacePage() {
     setVerificationFailed(false);
     setIsVerifying(false);
     setCountdown(null);
+    setIsLightAssistActive(true);
 
     if (captureTimerRef.current != null) {
       window.clearTimeout(captureTimerRef.current);
@@ -236,10 +242,15 @@ function VerifyFacePage() {
   }, [scheduleCapture, startCamera, startFaceDetectionLoop, stopCamera]);
 
   const handleReturnToLogin = useCallback(() => {
+    setIsLightAssistActive(false);
     stopCamera();
     clearAuthSession();
     navigate({ to: "/" });
   }, [navigate, stopCamera]);
+
+  const toggleLightAssist = useCallback(() => {
+    setIsLightAssistActive((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     const session = loadAuthSession();
@@ -265,10 +276,23 @@ function VerifyFacePage() {
   }, [isE2eFaceBypassEnabled, navigate, startCamera, stopCamera]);
 
   const showErrorActions = Boolean(error) || verificationFailed;
+  const showCameraGlow = flashEffect || isLightAssistActive;
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#041C15]">
-      <div className="absolute inset-0 bg-gradient-to-b from-[#041C15]/90 via-[#0B2B22]/80 to-[#041C15]/95" />
+    <div
+      className="relative flex min-h-screen items-center justify-center overflow-hidden"
+      style={{
+        background: isLightAssistActive ? "#FFFFFF" : "#041C15",
+        transition: "background 0.3s ease-in-out",
+      }}
+    >
+      <div
+        className="absolute inset-0 bg-gradient-to-b from-[#041C15]/90 via-[#0B2B22]/80 to-[#041C15]/95"
+        style={{
+          opacity: isLightAssistActive ? 0 : 1,
+          transition: "opacity 0.3s ease-in-out",
+        }}
+      />
 
       {/* Verification card — same fluid breakpoints as login */}
       <div className="relative z-10 w-full max-w-[90%] px-4 sm:max-w-[450px] sm:px-6 md:max-w-[500px] lg:max-w-[560px]">
@@ -291,13 +315,13 @@ function VerifyFacePage() {
 
           <div
             className={`face-verify-camera relative mx-auto mt-6 h-52 w-52 sm:mt-8 sm:h-56 sm:w-56 md:mt-10 md:h-64 md:w-64 lg:h-72 lg:w-72 ${
-              flashEffect ? "face-verify-camera--flash" : ""
-            }`}
+              showCameraGlow ? "face-verify-camera--flash" : ""
+            } ${isLightAssistActive ? "face-verify-camera--light-assist" : ""}`}
           >
             <div
               className={`face-verify-frame rounded-full ${
-                flashEffect ? "face-verify-frame--flash" : ""
-              }`}
+                showCameraGlow ? "face-verify-frame--flash" : ""
+              } ${isLightAssistActive ? "face-verify-frame--light-assist" : ""}`}
               aria-hidden
             />
             <video
@@ -321,6 +345,19 @@ function VerifyFacePage() {
             >
               {error}
             </div>
+          )}
+
+          {(error || verificationFailed || isLightAssistActive) && (
+            <button
+              type="button"
+              onClick={toggleLightAssist}
+              disabled={isVerifying}
+              className="mt-3 text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
+            >
+              {isLightAssistActive
+                ? t("disableScreenFlash")
+                : t("enableScreenFlash")}
+            </button>
           )}
 
           {isVerifying && (
