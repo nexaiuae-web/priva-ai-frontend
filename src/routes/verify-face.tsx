@@ -3,16 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RequireAuth } from "../components/RequireAuth";
 import {
-  clearAuthSession,
   FACE_PROFILE_NOT_CONFIGURED_MESSAGE,
   FACE_VERIFY_FAILED_MESSAGE,
   isBackendUnreachableError,
   isFaceVerifiedForCurrentSession,
   loadAuthSession,
-  setFaceVerifiedForToken,
   verifyFaceSnapshot,
 } from "../lib/api";
 import { enforceLoginSession } from "../lib/authGuard";
+import { useAuth } from "../contexts/AuthContext";
 import { preprocessFaceCaptureCanvas } from "../lib/faceCapturePreprocess";
 import { analyzeFaceFrame } from "../lib/faceDetectionGuide";
 
@@ -37,6 +36,7 @@ export const Route = createFileRoute("/verify-face")({
 function VerifyFacePage() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { completeFaceVerification, clearAuth, refreshFromStorage } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureTimerRef = useRef<number | null>(null);
@@ -117,7 +117,8 @@ function VerifyFacePage() {
     const video = videoRef.current;
     const session = loadAuthSession();
 
-    if (!session?.token) {
+    if (!session?.preAuthToken && !session?.token) {
+      clearAuth();
       navigate({ to: "/" });
       return;
     }
@@ -150,12 +151,16 @@ function VerifyFacePage() {
 
       const optimized = preprocessFaceCaptureCanvas(canvas);
       const dataUrl = optimized.toDataURL("image/jpeg", 0.92);
-      await verifyFaceSnapshot(dataUrl, {
+      const verifyResult = await verifyFaceSnapshot(dataUrl, {
         onRetry: () => {
           setStatus("Connection unstable, retrying…");
         },
       });
-      setFaceVerifiedForToken(session.token);
+      if (!verifyResult.access_token) {
+        throw new Error(FACE_VERIFY_FAILED_MESSAGE);
+      }
+      // Stage-2: Auth context swaps pre_auth_token → access_token.
+      completeFaceVerification(verifyResult.access_token);
       setIsLightAssistActive(false);
       stopCamera();
       navigate({ to: "/chat" });
@@ -181,7 +186,7 @@ function VerifyFacePage() {
       setIsVerifying(false);
       setCountdown(null);
     }
-  }, [navigate, stopCamera]);
+  }, [clearAuth, completeFaceVerification, navigate, stopCamera]);
 
   const scheduleCapture = useCallback(() => {
     if (captureTimerRef.current != null) {
@@ -258,27 +263,29 @@ function VerifyFacePage() {
   const handleReturnToLogin = useCallback(() => {
     setIsLightAssistActive(false);
     stopCamera();
-    clearAuthSession();
+    clearAuth();
     navigate({ to: "/" });
-  }, [navigate, stopCamera]);
+  }, [clearAuth, navigate, stopCamera]);
 
   const toggleLightAssist = useCallback(() => {
     setIsLightAssistActive((prev) => !prev);
   }, []);
 
   useEffect(() => {
+    refreshFromStorage();
     const session = loadAuthSession();
-    if (!session?.token) {
-      clearAuthSession();
+    if (!session?.preAuthToken && !session?.token) {
+      clearAuth();
       void navigate({ to: "/", replace: true });
       return;
     }
     if (isE2eFaceBypassEnabled && session.username?.trim()) {
-      setFaceVerifiedForToken(session.token);
+      // E2E: promote current pre-auth/legacy token to access and mark verified.
+      completeFaceVerification(session.token);
       void navigate({ to: "/chat" });
       return;
     }
-    if (isFaceVerifiedForCurrentSession()) {
+    if (isFaceVerifiedForCurrentSession() && session.accessToken) {
       void navigate({ to: "/chat" });
       return;
     }
@@ -288,7 +295,15 @@ function VerifyFacePage() {
     return () => {
       stopCamera();
     };
-  }, [isE2eFaceBypassEnabled, navigate, startCamera, stopCamera]);
+  }, [
+    clearAuth,
+    completeFaceVerification,
+    isE2eFaceBypassEnabled,
+    navigate,
+    refreshFromStorage,
+    startCamera,
+    stopCamera,
+  ]);
 
   const showErrorActions = Boolean(error) || verificationFailed;
   const showCameraGlow = flashEffect || isLightAssistActive;

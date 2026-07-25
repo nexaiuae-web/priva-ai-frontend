@@ -21,6 +21,7 @@ import { AssistantMessage } from "../components/AssistantMessage";
 import { ChatMessageActions } from "../components/ChatMessageActions";
 import { RequireAuth } from "../components/RequireAuth";
 import { UploadProgressCard } from "../components/UploadProgressCard";
+import { useAuth } from "../contexts/AuthContext";
 import { enforceChatAccess, hasFullChatAccess } from "../lib/authGuard";
 import {
   API_BASE,
@@ -28,7 +29,6 @@ import {
   DOCUMENTS_API,
   type AuthSession,
   buildClientHeaders,
-  clearAuthSession,
   clearWorkspaceClientState,
   fetchChatHistory,
   buildDocumentsUrl,
@@ -42,6 +42,8 @@ import {
   FOLDER_EMPTY_MESSAGE,
   extractStreamContent,
   formatDocumentDate,
+  getBearerAccessToken,
+  handleUnauthorizedChatResponse,
   isBackendUnreachableError,
   loadAuthSession,
   normalizeDocuments,
@@ -114,6 +116,7 @@ type Tab = "chat" | "knowledge";
 function ChatPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { accessToken: contextAccessToken, clearAuth, refreshFromStorage } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
@@ -151,7 +154,7 @@ function ChatPage() {
   const safeDocs = Array.isArray(docs) ? docs : [];
   const safeFolders = Array.isArray(folders) ? folders : [];
 
-  const token = auth?.token ?? null;
+  const token = auth?.accessToken ?? contextAccessToken ?? getBearerAccessToken() ?? null;
   const companyId = auth?.companyId ?? "default";
   const companyLabel =
     planMode === "free_trial" ? t("freeTrial") : auth?.companyName ?? companyId;
@@ -169,15 +172,17 @@ function ChatPage() {
 
   useEffect(() => {
     // Defense in depth — beforeLoad + RequireAuth already enforce this.
+    refreshFromStorage();
     if (!hasFullChatAccess()) {
-      clearAuthSession();
+      clearAuth();
       void navigate({ to: "/", replace: true });
       return;
     }
 
     const session = loadAuthSession();
-    if (!session?.token) {
-      clearAuthSession();
+    const accessToken = session?.accessToken ?? getBearerAccessToken();
+    if (!session || !accessToken) {
+      clearAuth();
       void navigate({ to: "/", replace: true });
       return;
     }
@@ -191,7 +196,7 @@ function ChatPage() {
       setLocale(initialLocale);
       setStoredLocale(initialLocale);
     })();
-  }, [navigate]);
+  }, [clearAuth, navigate, refreshFromStorage]);
 
   useEffect(() => {
     if (!auth?.token) return;
@@ -544,10 +549,18 @@ function ChatPage() {
     setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
 
     try {
-      const res = await fetchWithRetry(`${API_BASE}/api/chat`, {
+      const accessTokenForRequest = getBearerAccessToken() ?? token;
+      if (!accessTokenForRequest) {
+        clearAuth();
+        void navigate({ to: "/", replace: true });
+        return;
+      }
+
+      const chatUrl = `${API_BASE}/api/chat`;
+      const res = await fetchWithRetry(chatUrl, {
         method: "POST",
         headers: await buildClientHeaders({
-          token,
+          token: accessTokenForRequest,
           planMode,
           contentType: "application/json",
           accept: "text/event-stream",
@@ -559,6 +572,10 @@ function ChatPage() {
           history: historyForApi,
         }),
       });
+
+      if (handleUnauthorizedChatResponse(res, chatUrl)) {
+        return;
+      }
 
       if (!res.ok) {
         const errBody = await res.text().catch(() => "");
@@ -580,10 +597,13 @@ function ChatPage() {
         showAssistantError(detail);
         try {
           if (planMode === "free_trial") {
-            const status = await fetchTrialStatus({ token, planMode });
+            const status = await fetchTrialStatus({ token: accessTokenForRequest, planMode });
             setTrialStatus(status.trial);
           } else {
-            const usage = await fetchQuestionUsageSnapshot({ token, planMode });
+            const usage = await fetchQuestionUsageSnapshot({
+              token: accessTokenForRequest,
+              planMode,
+            });
             setQuestionUsage(usage);
           }
         } catch {
@@ -660,8 +680,14 @@ function ChatPage() {
       }
 
       if (planMode !== "free_trial") {
-        const usage = await fetchQuestionUsageSnapshot({ token, planMode });
-        setQuestionUsage(usage);
+        const accessTokenForUsage = getBearerAccessToken() ?? token;
+        if (accessTokenForUsage) {
+          const usage = await fetchQuestionUsageSnapshot({
+            token: accessTokenForUsage,
+            planMode,
+          });
+          setQuestionUsage(usage);
+        }
       }
     } catch (err) {
       const message = isBackendUnreachableError(err)
@@ -841,7 +867,7 @@ function ChatPage() {
   };
 
   const handleLogout = () => {
-    clearAuthSession();
+    clearAuth();
     clearWorkspaceClientState();
     chatScopeKeyRef.current = null;
     setAuth(null);

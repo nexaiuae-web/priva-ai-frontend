@@ -6,17 +6,16 @@ import { useTranslation } from "react-i18next";
 import {
   API_BASE,
   buildClientHeaders,
-  clearAuthSession,
   clearWorkspaceClientState,
   fetchWithRetry,
   isBackendUnreachableError,
   BACKEND_UNREACHABLE_MESSAGE,
   persistPlanMode,
-  persistAuthSession,
   setFaceVerifiedForToken,
 } from "../lib/api";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
+import { useAuth } from "../contexts/AuthContext";
 
 export const Route = createFileRoute("/")({
   component: LoginPage,
@@ -71,6 +70,7 @@ function formatCountdown(totalSeconds: number): string {
 function LoginPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const { persistLogin, clearAuth } = useAuth();
   const recaptchaRef = useRef<ReCAPTCHA | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [username, setUsername] = useState("");
@@ -160,7 +160,8 @@ function LoginPage() {
 
       if (res.ok) {
         const data = await res.json();
-        persistAuthSession(data, username);
+        // Stage-1: store pre_auth_token for FaceID verification.
+        persistLogin(data, username);
         navigate({ to: "/verify-face" });
         return;
       }
@@ -171,7 +172,7 @@ function LoginPage() {
       clearCaptchaToken();
 
       if (res.status === 429) {
-        clearAuthSession();
+        clearAuth();
         setShowCaptcha(false);
         const retrySeconds = parseRetryAfterSeconds(res, err);
         setRateLimitedUntil(Date.now() + retrySeconds * 1000);
@@ -183,7 +184,7 @@ function LoginPage() {
       }
 
       if (res.status === 403 && err.error === "USER_LIMIT_REACHED") {
-        clearAuthSession();
+        clearAuth();
         setShowCaptcha(false);
         setError(err.message || t("usersLimitReached"));
         return;
@@ -197,7 +198,7 @@ function LoginPage() {
         setShowCaptcha(false);
       }
 
-      clearAuthSession();
+      clearAuth();
       setError(t("invalidCredentials"));
     } catch (err) {
       clearCaptchaToken();
@@ -215,10 +216,10 @@ function LoginPage() {
     setIsLoading(true);
     try {
       persistPlanMode("free_trial");
-      clearAuthSession();
+      clearAuth();
       clearWorkspaceClientState();
       await getDeviceFingerprint();
-      const guestSession = persistAuthSession(
+      const guestSession = persistLogin(
         {
           token: "trial_guest",
           company_name: "Free Trial",

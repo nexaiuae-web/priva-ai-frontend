@@ -2,6 +2,8 @@ import { redirect } from "@tanstack/react-router";
 import {
   type AuthSession,
   clearAuthSession,
+  getBearerAccessToken,
+  getPreAuthToken,
   isFaceVerifiedForCurrentSession,
   loadAuthSession,
   loadPlanMode,
@@ -11,21 +13,26 @@ export type AuthAccessState = {
   isAuthenticated: boolean;
   isFaceIdVerified: boolean;
   session: AuthSession | null;
+  accessToken: string | null;
+  preAuthToken: string | null;
 };
 
 /** Snapshot of login + FaceID state used by route guards. */
 export function getAuthAccessState(): AuthAccessState {
   const session = loadAuthSession();
-  const isAuthenticated = Boolean(session?.token?.trim());
+  const accessToken = getBearerAccessToken();
+  const preAuthToken = getPreAuthToken() || session?.preAuthToken || null;
+  const isAuthenticated = Boolean(accessToken || preAuthToken || session?.token?.trim());
   // Free-trial guests skip the FaceID UI but still mark the session verified.
   const isFaceIdVerified =
     isFaceVerifiedForCurrentSession() || loadPlanMode() === "free_trial";
 
-  return { isAuthenticated, isFaceIdVerified, session };
+  return { isAuthenticated, isFaceIdVerified, session, accessToken, preAuthToken };
 }
 
 export function hasFullChatAccess(state: AuthAccessState = getAuthAccessState()): boolean {
-  return state.isAuthenticated && state.isFaceIdVerified;
+  // Chat requires Stage-2 access_token + completed FaceID (or free trial).
+  return Boolean(state.accessToken) && state.isFaceIdVerified;
 }
 
 /**
@@ -38,7 +45,7 @@ export function clearAuthOnUnauthorizedAccess(): void {
 
 /**
  * Guard for `/chat` and other fully protected routes.
- * Requires a valid token AND FaceID verification; otherwise clears auth and
+ * Requires Stage-2 access_token AND FaceID verification; otherwise clears auth and
  * redirects to the login page.
  */
 export function enforceChatAccess(): AuthSession {
@@ -53,12 +60,18 @@ export function enforceChatAccess(): AuthSession {
 }
 
 /**
- * Guard for routes that only need a logged-in session (e.g. `/verify-face`).
+ * Guard for routes that only need a logged-in Stage-1 session (e.g. `/verify-face`).
  */
 export function enforceLoginSession(): AuthSession {
   const session = loadAuthSession();
+  const preAuth = getPreAuthToken() || session?.preAuthToken || session?.token;
 
-  if (!session?.token?.trim()) {
+  if (!preAuth?.trim() && !session?.accessToken) {
+    clearAuthOnUnauthorizedAccess();
+    throw redirect({ to: "/" });
+  }
+
+  if (!session) {
     clearAuthOnUnauthorizedAccess();
     throw redirect({ to: "/" });
   }

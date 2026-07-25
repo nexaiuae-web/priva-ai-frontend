@@ -315,7 +315,10 @@ export async function fetchTrialStatus({
 }
 
 export const AUTH_STORAGE_KEYS = {
+  /** @deprecated Prefer accessToken / preAuthToken; kept in sync for legacy readers. */
   token: "priva_token",
+  preAuthToken: "priva_pre_auth_token",
+  accessToken: "priva_access_token",
   companyId: "priva_company",
   companyName: "priva_company_name",
   user: "priva_user",
@@ -329,8 +332,14 @@ export const FACE_VERIFY_FAILED_MESSAGE =
 
 export const FACE_PROFILE_NOT_CONFIGURED_MESSAGE = "Face profile not configured by administrator.";
 
+export type TokenStage = "pre_auth" | "access";
+
 export interface AuthSession {
+  /** Active bearer for the current stage (pre-auth before FaceID, access after). */
   token: string;
+  preAuthToken: string | null;
+  accessToken: string | null;
+  tokenStage: TokenStage;
   companyId: string;
   companyName: string;
   username: string;
@@ -357,6 +366,61 @@ function readString(...values: unknown[]): string {
   return "";
 }
 
+function isGuestToken(token: string): boolean {
+  return token === "trial_guest";
+}
+
+export function getPreAuthToken(): string | null {
+  if (!canUseWebStorage()) return null;
+  return localStorage.getItem(AUTH_STORAGE_KEYS.preAuthToken);
+}
+
+export function getAccessToken(): string | null {
+  if (!canUseWebStorage()) return null;
+  return (
+    localStorage.getItem(AUTH_STORAGE_KEYS.accessToken) ||
+    // Legacy fallback: post-FaceID flows historically only wrote priva_token.
+    null
+  );
+}
+
+/**
+ * Bearer token for authenticated API calls after FaceID (or guest trial).
+ * Never returns a Stage-1 pre_auth token.
+ */
+export function getBearerAccessToken(): string | null {
+  if (!canUseWebStorage()) return null;
+  const access = localStorage.getItem(AUTH_STORAGE_KEYS.accessToken);
+  if (access?.trim()) return access.trim();
+
+  // Migration: legacy single-key sessions after FaceID / guest trial.
+  const legacy = localStorage.getItem(AUTH_STORAGE_KEYS.token);
+  if (!legacy?.trim() || localStorage.getItem(AUTH_STORAGE_KEYS.preAuthToken)) {
+    return null;
+  }
+  if (isGuestToken(legacy) || sessionStorage.getItem(FACE_VERIFIED_KEY) === legacy) {
+    return legacy.trim();
+  }
+  return null;
+}
+
+function writeSessionMeta(session: Pick<AuthSession, "companyId" | "companyName" | "username">): void {
+  localStorage.setItem(AUTH_STORAGE_KEYS.companyId, session.companyId);
+  localStorage.setItem(AUTH_STORAGE_KEYS.companyName, session.companyName);
+  localStorage.setItem(AUTH_STORAGE_KEYS.user, session.username);
+  localStorage.setItem(AUTH_STORAGE_KEYS.legacyCompanyName, session.companyName);
+}
+
+function clearTokenKeys(): void {
+  localStorage.removeItem(AUTH_STORAGE_KEYS.token);
+  localStorage.removeItem(AUTH_STORAGE_KEYS.preAuthToken);
+  localStorage.removeItem(AUTH_STORAGE_KEYS.accessToken);
+}
+
+/**
+ * Persist Stage-1 `pre_auth_token` after username/password login.
+ * Guest/trial sessions are stored directly as Stage-2 `access_token`.
+ */
 export function persistAuthSession(loginPayload: unknown, username: string): AuthSession {
   const body =
     loginPayload && typeof loginPayload === "object"
@@ -366,9 +430,12 @@ export function persistAuthSession(loginPayload: unknown, username: string): Aut
   const nestedUser =
     body.user && typeof body.user === "object" ? (body.user as Record<string, unknown>) : {};
 
-  const token = readString(body.token, body.access_token, body.accessToken, body.jwt);
+  const preAuthFromBody = readString(body.pre_auth_token, body.preAuthToken);
+  const accessFromBody = readString(body.access_token, body.accessToken);
+  const legacyToken = readString(body.token, body.jwt);
 
-  const jwt = token ? decodeJwtPayload(token) : {};
+  const probeToken = preAuthFromBody || accessFromBody || legacyToken;
+  const jwt = probeToken ? decodeJwtPayload(probeToken) : {};
 
   const companyId = readString(
     body.company_id,
@@ -397,31 +464,104 @@ export function persistAuthSession(loginPayload: unknown, username: string): Aut
     companyId,
   );
 
-  const session: AuthSession = {
-    token: token || "local",
+  const resolvedUsername =
+    readString(body.username, nestedUser.username, username) || username;
+
+  const meta = {
     companyId: companyId || "default",
     companyName: companyName || companyId || "default",
-    username: readString(body.username, nestedUser.username, username) || username,
+    username: resolvedUsername,
+  };
+
+  // Guest trial skips FaceID — store as final access token.
+  if (isGuestToken(legacyToken) || isGuestToken(accessFromBody)) {
+    const guestToken = legacyToken || accessFromBody || "trial_guest";
+    return persistAccessTokenSession(guestToken, meta);
+  }
+
+  // Two-stage login: prefer explicit pre_auth_token, then legacy token as Stage-1.
+  const preAuthToken = preAuthFromBody || legacyToken || accessFromBody;
+  return persistPreAuthTokenSession(preAuthToken || "local", meta);
+}
+
+/** Store Stage-1 pre-auth token and clear any prior access token. */
+export function persistPreAuthTokenSession(
+  preAuthToken: string,
+  meta: Pick<AuthSession, "companyId" | "companyName" | "username">,
+): AuthSession {
+  const session: AuthSession = {
+    token: preAuthToken,
+    preAuthToken,
+    accessToken: null,
+    tokenStage: "pre_auth",
+    ...meta,
   };
 
   if (!canUseWebStorage()) {
     return session;
   }
 
-  localStorage.setItem(AUTH_STORAGE_KEYS.token, session.token);
-  localStorage.setItem(AUTH_STORAGE_KEYS.companyId, session.companyId);
-  localStorage.setItem(AUTH_STORAGE_KEYS.companyName, session.companyName);
-  localStorage.setItem(AUTH_STORAGE_KEYS.user, session.username);
-  localStorage.setItem(AUTH_STORAGE_KEYS.legacyCompanyName, session.companyName);
+  clearTokenKeys();
+  localStorage.setItem(AUTH_STORAGE_KEYS.preAuthToken, preAuthToken);
+  // Keep legacy key in sync so older readers still see a token during FaceID.
+  localStorage.setItem(AUTH_STORAGE_KEYS.token, preAuthToken);
+  writeSessionMeta(meta);
+  return session;
+}
 
+/**
+ * Replace Stage-1 pre_auth with the final Stage-2 access_token after FaceID.
+ */
+export function persistAccessTokenSession(
+  accessToken: string,
+  meta?: Pick<AuthSession, "companyId" | "companyName" | "username">,
+): AuthSession {
+  const existing = canUseWebStorage()
+    ? {
+        companyId:
+          meta?.companyId ||
+          localStorage.getItem(AUTH_STORAGE_KEYS.companyId) ||
+          localStorage.getItem(AUTH_STORAGE_KEYS.legacyCompanyName) ||
+          "default",
+        companyName:
+          meta?.companyName ||
+          localStorage.getItem(AUTH_STORAGE_KEYS.companyName) ||
+          localStorage.getItem(AUTH_STORAGE_KEYS.legacyCompanyName) ||
+          "default",
+        username:
+          meta?.username || localStorage.getItem(AUTH_STORAGE_KEYS.user) || "User",
+      }
+    : {
+        companyId: meta?.companyId || "default",
+        companyName: meta?.companyName || "default",
+        username: meta?.username || "User",
+      };
+
+  const session: AuthSession = {
+    token: accessToken,
+    preAuthToken: null,
+    accessToken,
+    tokenStage: "access",
+    ...existing,
+  };
+
+  if (!canUseWebStorage()) {
+    return session;
+  }
+
+  localStorage.removeItem(AUTH_STORAGE_KEYS.preAuthToken);
+  localStorage.setItem(AUTH_STORAGE_KEYS.accessToken, accessToken);
+  localStorage.setItem(AUTH_STORAGE_KEYS.token, accessToken);
+  writeSessionMeta(existing);
   return session;
 }
 
 export function loadAuthSession(): AuthSession | null {
   if (!canUseWebStorage()) return null;
 
-  const token = localStorage.getItem(AUTH_STORAGE_KEYS.token);
-  if (!token) return null;
+  const preAuthToken = localStorage.getItem(AUTH_STORAGE_KEYS.preAuthToken);
+  const accessToken = localStorage.getItem(AUTH_STORAGE_KEYS.accessToken);
+  const legacyToken = localStorage.getItem(AUTH_STORAGE_KEYS.token);
 
   const companyId =
     localStorage.getItem(AUTH_STORAGE_KEYS.companyId) ||
@@ -433,12 +573,53 @@ export function loadAuthSession(): AuthSession | null {
     localStorage.getItem(AUTH_STORAGE_KEYS.legacyCompanyName) ||
     companyId;
 
-  return {
-    token,
-    companyId,
-    companyName,
-    username: localStorage.getItem(AUTH_STORAGE_KEYS.user) || "User",
-  };
+  const username = localStorage.getItem(AUTH_STORAGE_KEYS.user) || "User";
+  const meta = { companyId, companyName, username };
+
+  if (accessToken?.trim()) {
+    return {
+      token: accessToken,
+      preAuthToken: preAuthToken,
+      accessToken,
+      tokenStage: "access",
+      ...meta,
+    };
+  }
+
+  if (preAuthToken?.trim()) {
+    return {
+      token: preAuthToken,
+      preAuthToken,
+      accessToken: null,
+      tokenStage: "pre_auth",
+      ...meta,
+    };
+  }
+
+  // Legacy single-key sessions (pre two-stage storage).
+  if (legacyToken?.trim()) {
+    const faceVerified =
+      sessionStorage.getItem(FACE_VERIFIED_KEY) === legacyToken ||
+      isGuestToken(legacyToken);
+    if (faceVerified) {
+      return {
+        token: legacyToken,
+        preAuthToken: null,
+        accessToken: legacyToken,
+        tokenStage: "access",
+        ...meta,
+      };
+    }
+    return {
+      token: legacyToken,
+      preAuthToken: legacyToken,
+      accessToken: null,
+      tokenStage: "pre_auth",
+      ...meta,
+    };
+  }
+
+  return null;
 }
 
 export function clearAuthSession(): void {
@@ -449,6 +630,34 @@ export function clearAuthSession(): void {
   });
   sessionStorage.removeItem(FACE_VERIFIED_KEY);
   clearWorkspaceClientState();
+}
+
+/**
+ * Clear tokens and hard-redirect to login when a protected chat call is unauthorized.
+ * Returns true when a 401 was handled.
+ */
+export function handleUnauthorizedChatResponse(
+  res: Response,
+  requestUrl: string | URL | Request,
+): boolean {
+  if (res.status !== 401) return false;
+
+  const url =
+    typeof requestUrl === "string"
+      ? requestUrl
+      : requestUrl instanceof URL
+        ? requestUrl.href
+        : requestUrl.url;
+
+  if (!url.includes("/api/chat")) {
+    return false;
+  }
+
+  clearAuthSession();
+  if (typeof window !== "undefined" && window.location.pathname !== "/") {
+    window.location.assign("/");
+  }
+  return true;
 }
 
 export interface ChatHistoryMessage {
@@ -494,9 +703,11 @@ export function setFaceVerifiedForToken(token: string): void {
 export function isFaceVerifiedForCurrentSession(): boolean {
   if (!canUseWebStorage()) return false;
 
-  const token = localStorage.getItem(AUTH_STORAGE_KEYS.token);
+  const access =
+    localStorage.getItem(AUTH_STORAGE_KEYS.accessToken) ||
+    localStorage.getItem(AUTH_STORAGE_KEYS.token);
   const verified = sessionStorage.getItem(FACE_VERIFIED_KEY);
-  return Boolean(token && verified && verified === token);
+  return Boolean(access && verified && verified === access);
 }
 
 export function isBackendUnreachableError(err: unknown): boolean {
@@ -625,6 +836,7 @@ export async function fetchWithRetry(
         notifyApiRetryStatus("idle");
       }
 
+      handleUnauthorizedChatResponse(res, input);
       return res;
     } catch (err) {
       lastError = err;
@@ -660,18 +872,23 @@ export async function verifyFaceSnapshot(
   success: boolean;
   match_score?: number;
   enrolled?: boolean;
+  /** Stage-2 access token issued after successful face verification. */
+  access_token?: string;
 }> {
   if (!canUseWebStorage()) {
     throw new Error("Not authenticated.");
   }
 
-  const token = localStorage.getItem(AUTH_STORAGE_KEYS.token);
-  if (!token) {
+  // Stage-1: FaceID must use the pre_auth_token from login.
+  const preAuthToken =
+    localStorage.getItem(AUTH_STORAGE_KEYS.preAuthToken) ||
+    localStorage.getItem(AUTH_STORAGE_KEYS.token);
+  if (!preAuthToken) {
     throw new Error("Not authenticated.");
   }
 
   const headers = await buildClientHeaders({
-    token,
+    token: preAuthToken,
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
@@ -693,6 +910,9 @@ export async function verifyFaceSnapshot(
     message?: string;
     match_score?: number;
     enrolled?: boolean;
+    token?: string;
+    access_token?: string;
+    accessToken?: string;
   };
 
   if (!res.ok || !payload.success) {
@@ -701,10 +921,21 @@ export async function verifyFaceSnapshot(
     throw err;
   }
 
+  const accessToken = readString(payload.access_token, payload.accessToken, payload.token);
+  if (!accessToken) {
+    const err = new Error(FACE_VERIFY_FAILED_MESSAGE);
+    (err as Error & { code?: string }).code = "FACE_ACCESS_TOKEN_MISSING";
+    throw err;
+  }
+
+  // Stage-2: replace pre_auth_token with the final access_token.
+  persistAccessTokenSession(accessToken);
+
   return {
     success: true,
     match_score: payload.match_score,
     enrolled: payload.enrolled,
+    access_token: accessToken,
   };
 }
 

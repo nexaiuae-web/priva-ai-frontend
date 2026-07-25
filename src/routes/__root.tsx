@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { ApiRetryNotifier } from "../components/ApiRetryNotifier";
 import { Toaster } from "../components/ui/sonner";
 import { TawkRouteGate } from "../components/TawkRouteGate";
+import { AuthProvider } from "../contexts/AuthContext";
 import { useClientSecurityDefense } from "../hooks/useClientSecurityDefense";
 import i18n from "../i18n";
 
@@ -232,10 +233,12 @@ function RootComponent() {
   return (
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <TawkRouteGate />
-        <ApiRetryNotifier />
-        {isLoading ? <LoadingScreen /> : <Outlet />}
-        <Toaster position="top-center" richColors closeButton duration={6000} />
+        <AuthProvider>
+          <TawkRouteGate />
+          <ApiRetryNotifier />
+          {isLoading ? <LoadingScreen /> : <Outlet />}
+          <Toaster position="top-center" richColors closeButton duration={6000} />
+        </AuthProvider>
       </QueryClientProvider>
     </I18nextProvider>
   );
