@@ -52,12 +52,15 @@ import {
   fetchTrialStatus,
   fetchStorageQuotaSnapshot,
   fetchQuestionUsageSnapshot,
+  fetchTrialQuota,
+  loadTrialEmail,
   getStorageQuotaExceededMessage,
   resolveUploadErrorMessage,
   QUESTION_QUOTA_EXCEEDED_MESSAGE,
   TRIAL_LIMIT_MESSAGE,
   wouldExceedStorageQuota,
   type QuestionUsageSnapshot,
+  type TrialQuotaPayload,
 } from "../lib/api";
 import {
   getWorkspaceUserIdFromToken,
@@ -70,10 +73,7 @@ import {
   stripCitationNoise,
   type ChatSourceRef,
 } from "../lib/chatCitations";
-import {
-  parseChatStreamPayload,
-  extractTokenFromChatPayload,
-} from "../lib/chatStream";
+import { parseChatStreamPayload, extractTokenFromChatPayload } from "../lib/chatStream";
 import {
   type AppLocale,
   detectLocaleFromText,
@@ -129,11 +129,8 @@ function ChatPage() {
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsUploading, setDocsUploading] = useState(false);
   const [docsError, setDocsError] = useState("");
-  const [uploadProgress, setUploadProgress] =
-    useState<UploadProgressState | null>(null);
-  const [uploadingFilename, setUploadingFilename] = useState<string | null>(
-    null,
-  );
+  const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
+  const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeUploadIdRef = useRef<string | null>(null);
@@ -149,6 +146,7 @@ function ChatPage() {
     storage_limit_bytes: number;
   } | null>(null);
   const [questionUsage, setQuestionUsage] = useState<QuestionUsageSnapshot | null>(null);
+  const [trialQuota, setTrialQuota] = useState<TrialQuotaPayload | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const safeDocs = Array.isArray(docs) ? docs : [];
@@ -157,7 +155,7 @@ function ChatPage() {
   const token = auth?.accessToken ?? contextAccessToken ?? getBearerAccessToken() ?? null;
   const companyId = auth?.companyId ?? "default";
   const companyLabel =
-    planMode === "free_trial" ? t("freeTrial") : auth?.companyName ?? companyId;
+    planMode === "free_trial" ? t("freeTrial") : (auth?.companyName ?? companyId);
 
   const showStorageQuotaToast = useCallback(() => {
     toast.error(getStorageQuotaExceededMessage(locale), { duration: 6000 });
@@ -258,7 +256,7 @@ function ChatPage() {
   }, [mobileNavOpen]);
 
   const currentFolder = currentFolderId
-    ? safeFolders.find((folder) => folder.id === currentFolderId) ?? null
+    ? (safeFolders.find((folder) => folder.id === currentFolderId) ?? null)
     : null;
 
   const fetchFoldersList = async () => {
@@ -365,6 +363,22 @@ function ChatPage() {
   }, [token, planMode, isLoading]);
 
   useEffect(() => {
+    if (!token || planMode !== "free_trial") {
+      setTrialQuota(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const quota = await fetchTrialQuota(token);
+        setTrialQuota(quota);
+      } catch (err) {
+        console.warn("[KB] trial quota load failed:", err);
+        setTrialQuota(null);
+      }
+    })();
+  }, [token, planMode, docsUploading, isLoading]);
+
+  useEffect(() => {
     if (!token || !companyId || docsUploading) return;
 
     const workspaceUserId = getWorkspaceUserIdFromToken(token);
@@ -410,9 +424,7 @@ function ChatPage() {
     return () => navigator.serviceWorker?.removeEventListener("message", onSwMessage);
   }, [token, companyId, docsUploading]);
 
-  const patchAssistantMessage = (
-    patch: Partial<ChatMessage> & { content?: string },
-  ) => {
+  const patchAssistantMessage = (patch: Partial<ChatMessage> & { content?: string }) => {
     setMessages((prev) => {
       const next = [...prev];
       const last = next[next.length - 1];
@@ -424,10 +436,7 @@ function ChatPage() {
     });
   };
 
-  const setAssistantContent = (
-    content: string,
-    sources?: ChatSourceRef[],
-  ) => {
+  const setAssistantContent = (content: string, sources?: ChatSourceRef[]) => {
     patchAssistantMessage({ content, sources });
   };
 
@@ -464,9 +473,7 @@ function ChatPage() {
       return { text: assistantText, sources, sourceFilenames };
     }
 
-    const payload = trimmed.startsWith("data: ")
-      ? trimmed.slice(6).trim()
-      : trimmed;
+    const payload = trimmed.startsWith("data: ") ? trimmed.slice(6).trim() : trimmed;
     if (!payload || payload === "[DONE]") {
       return { text: assistantText, sources, sourceFilenames };
     }
@@ -497,11 +504,8 @@ function ChatPage() {
     }
 
     if (event.type === "done") {
-      const finalText =
-        typeof event.answer === "string" ? event.answer : assistantText;
-      const mergedSources = Array.isArray(event.sources)
-        ? event.sources
-        : sources;
+      const finalText = typeof event.answer === "string" ? event.answer : assistantText;
+      const mergedSources = Array.isArray(event.sources) ? event.sources : sources;
       const mergedFilenames = Array.isArray(event.source_filenames)
         ? event.source_filenames
         : sourceFilenames;
@@ -536,11 +540,7 @@ function ChatPage() {
     setLocale(activeLocale);
     setStoredLocale(activeLocale);
     const historyForApi = messages
-      .filter(
-        (m) =>
-          (m.role === "user" || m.role === "assistant") &&
-          m.content.trim().length > 0,
-      )
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.content.trim().length > 0)
       .slice(-6)
       .map((m) => ({ role: m.role, content: m.content }));
 
@@ -616,13 +616,9 @@ function ChatPage() {
       const reader = res.body?.getReader();
 
       if (!reader) {
-        const body = contentType.includes("application/json")
-          ? await res.json()
-          : await res.text();
+        const body = contentType.includes("application/json") ? await res.json() : await res.text();
         const text =
-          typeof body === "string"
-            ? body
-            : extractResponseContent(body) ?? JSON.stringify(body);
+          typeof body === "string" ? body : (extractResponseContent(body) ?? JSON.stringify(body));
         const parsed = parseAssistantMessage(text);
         setAssistantContent(parsed.answer);
         return;
@@ -641,12 +637,7 @@ function ChatPage() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          const result = processStreamLine(
-            line,
-            assistantText,
-            streamSources,
-            streamFilenames,
-          );
+          const result = processStreamLine(line, assistantText, streamSources, streamFilenames);
           assistantText = result.text;
           streamSources = result.sources;
           streamFilenames = result.sourceFilenames;
@@ -655,22 +646,13 @@ function ChatPage() {
       }
 
       if (buffer.trim()) {
-        const result = processStreamLine(
-          buffer,
-          assistantText,
-          streamSources,
-          streamFilenames,
-        );
+        const result = processStreamLine(buffer, assistantText, streamSources, streamFilenames);
         assistantText = result.text;
         streamSources = result.sources;
         streamFilenames = result.sourceFilenames;
       }
 
-      const parsed = parseAssistantMessage(
-        assistantText,
-        streamSources,
-        streamFilenames,
-      );
+      const parsed = parseAssistantMessage(assistantText, streamSources, streamFilenames);
       setAssistantContent(parsed.answer, streamSources);
 
       if (!parsed.answer.trim()) {
@@ -716,10 +698,7 @@ function ChatPage() {
         : null,
     });
 
-    if (
-      quota &&
-      wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)
-    ) {
+    if (quota && wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)) {
       showStorageQuotaToast();
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
@@ -894,28 +873,31 @@ function ChatPage() {
 
   const contentDir = isRtlLocale(locale) ? "rtl" : "ltr";
 
+  const trialEmail = loadTrialEmail();
   const sidebarContent = (
     <>
       <div className="shrink-0 p-4 lg:p-6">
         <h2 className="text-lg font-bold text-white">{t("aiWorkspace")}</h2>
         <p className="mt-1 text-xs text-[#A3B8B0]">
-          {t("activeCompany")}{" "}
-          <span className="text-[#00E699]">{companyLabel}</span>
+          {t("activeCompany")} <span className="text-[#00E699]">{companyLabel}</span>
         </p>
-        {planMode === "free_trial" && trialStatus ? (
-          <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
-            <p className="text-[10px] text-[#A3B8B0]">
-              {t("plan")} <span className="font-semibold text-white">{t("freeTrial")}</span> |{" "}
-              {t("questionsLeft", {
-                remaining: trialStatus.remaining_requests,
-                limit: trialStatus.request_limit,
+        {planMode === "free_trial" && trialEmail ? (
+          <p className="mt-2 text-[10px] text-[#A3B8B0]">
+            {t("registeredEmail")} <span className="font-medium text-[#D5FBEA]">{trialEmail}</span>
+          </p>
+        ) : null}
+        {planMode === "free_trial" && trialQuota ? (
+          <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
+            <p className="text-[10px] font-semibold text-white">
+              {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
+            </p>
+            <p className="mt-2 text-[11px] text-[#A3B8B0]">
+              {t("sovereignQueriesRemaining", {
+                remaining: Math.max(0, trialQuota.queries_limit - trialQuota.queries_used),
+                limit: trialQuota.queries_limit,
               })}
             </p>
-            <p className="mt-1 text-[10px] text-[#A3B8B0]">
-              {t("storage")} {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
-              {(trialStatus.storage_limit_bytes / (1024 * 1024)).toFixed(1)}MB
-            </p>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
               <div
                 className="h-full rounded bg-[#00E699]"
                 style={{
@@ -923,7 +905,60 @@ function ChatPage() {
                     100,
                     Math.max(
                       0,
-                      (trialStatus.storage_used_bytes / Math.max(1, trialStatus.storage_limit_bytes)) *
+                      (trialQuota.queries_used / Math.max(1, trialQuota.queries_limit)) * 100,
+                    ),
+                  )}%`,
+                }}
+              />
+            </div>
+            <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
+              {t("knowledgeBaseStorageUsed", {
+                used: (trialQuota.storage_used_bytes / (1024 * 1024)).toFixed(1),
+                limit: (trialQuota.storage_limit_bytes / (1024 * 1024)).toFixed(1),
+              })}
+            </p>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+              <div
+                className="h-full rounded bg-[#00E699]"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(
+                      0,
+                      (trialQuota.storage_used_bytes /
+                        Math.max(1, trialQuota.storage_limit_bytes)) *
+                        100,
+                    ),
+                  )}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : planMode === "free_trial" && trialStatus ? (
+          <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
+            <p className="text-[10px] font-semibold text-white">
+              {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
+            </p>
+            <p className="mt-2 text-[11px] text-[#A3B8B0]">
+              {t("questionsLeft", {
+                remaining: trialStatus.remaining_requests,
+                limit: trialStatus.request_limit,
+              })}
+            </p>
+            <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
+              {t("storage")} {(trialStatus.storage_used_bytes / (1024 * 1024)).toFixed(1)}MB/
+              {(trialStatus.storage_limit_bytes / (1024 * 1024)).toFixed(1)}MB
+            </p>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+              <div
+                className="h-full rounded bg-[#00E699]"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(
+                      0,
+                      (trialStatus.storage_used_bytes /
+                        Math.max(1, trialStatus.storage_limit_bytes)) *
                         100,
                     ),
                   )}%`,
@@ -1051,409 +1086,386 @@ function ChatPage() {
           {sidebarContent}
         </aside>
 
-      {/* Main workspace — RTL/LTR for text only; scroll contained here */}
-      <main
-        className="relative z-10 flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
-        dir={contentDir}
-      >
-        <div className="flex shrink-0 items-center gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm lg:hidden">
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
-            aria-label={t("openNavMenu")}
-            aria-expanded={mobileNavOpen}
-          >
-            <Menu size={20} />
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-white">
-              {activeTab === "chat" ? t("privaAiChatTitle") : t("knowledgeBaseTitle")}
-            </p>
-            <p className="truncate text-xs text-[#A3B8B0]">{companyLabel}</p>
-          </div>
-        </div>
-        {activeTab === "chat" ? (
-          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-            {/* Chat header */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:px-6 sm:py-4">
-              <h3 className="text-sm font-semibold text-white sm:text-base">
-                {t("privaAiChatTitle")}
-              </h3>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="flex min-h-[40px] items-center gap-2 rounded-lg bg-[#041C15]/60 px-3 py-2 text-xs font-medium text-[#A3B8B0] transition-all hover:bg-[#00E699]/10 hover:text-[#00E699]"
-              >
-                <Trash2 size={14} />
-                <span className="hidden sm:inline">{t("resetDiscussion")}</span>
-                <span className="sm:hidden">{t("reset")}</span>
-              </button>
-            </div>
-
-            {/* Messages feed — only this region scrolls vertically */}
-            <div
-              className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4 sm:p-6"
-              dir={contentDir}
+        {/* Main workspace — RTL/LTR for text only; scroll contained here */}
+        <main
+          className="relative z-10 flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden"
+          dir={contentDir}
+        >
+          <div className="flex shrink-0 items-center gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm lg:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 text-white"
+              aria-label={t("openNavMenu")}
+              aria-expanded={mobileNavOpen}
             >
-              {messages.map((msg, idx) => {
-                const isUser = msg.role === "user";
-                const isStreamingMsg =
-                  isLoading && !isUser && idx === messages.length - 1;
-                const assistantParsed = isUser
-                  ? null
-                  : parseAssistantMessage(
-                      msg.content,
-                      msg.sources || [],
-                    );
-                const copyText = isUser
-                  ? msg.content
-                  : assistantParsed?.answer?.trim() ||
-                    stripCitationNoise(msg.content);
+              <Menu size={20} />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">
+                {activeTab === "chat" ? t("privaAiChatTitle") : t("knowledgeBaseTitle")}
+              </p>
+              <p className="truncate text-xs text-[#A3B8B0]">{companyLabel}</p>
+            </div>
+          </div>
+          {activeTab === "chat" ? (
+            <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+              {/* Chat header */}
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:px-6 sm:py-4">
+                <h3 className="text-sm font-semibold text-white sm:text-base">
+                  {t("privaAiChatTitle")}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="flex min-h-[40px] items-center gap-2 rounded-lg bg-[#041C15]/60 px-3 py-2 text-xs font-medium text-[#A3B8B0] transition-all hover:bg-[#00E699]/10 hover:text-[#00E699]"
+                >
+                  <Trash2 size={14} />
+                  <span className="hidden sm:inline">{t("resetDiscussion")}</span>
+                  <span className="sm:hidden">{t("reset")}</span>
+                </button>
+              </div>
 
-                return (
-                  <div
-                    key={idx}
-                    className={`flex w-full ${
-                      isUser ? "justify-end" : "justify-start"
-                    }`}
-                  >
+              {/* Messages feed — only this region scrolls vertically */}
+              <div
+                className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden p-4 sm:p-6"
+                dir={contentDir}
+              >
+                {messages.map((msg, idx) => {
+                  const isUser = msg.role === "user";
+                  const isStreamingMsg = isLoading && !isUser && idx === messages.length - 1;
+                  const assistantParsed = isUser
+                    ? null
+                    : parseAssistantMessage(msg.content, msg.sources || []);
+                  const copyText = isUser
+                    ? msg.content
+                    : assistantParsed?.answer?.trim() || stripCitationNoise(msg.content);
+
+                  return (
                     <div
-                      className={`flex min-w-0 max-w-[85%] items-start gap-1 sm:max-w-[75%] ${
-                        isUser ? "flex-row-reverse" : "flex-row"
-                      }`}
+                      key={idx}
+                      className={`flex w-full ${isUser ? "justify-end" : "justify-start"}`}
                     >
                       <div
-                        className={`min-w-0 flex-1 overflow-x-hidden rounded-2xl px-5 py-3 text-sm leading-relaxed ${
-                          isUser
-                            ? "bg-white text-[#041C15] shadow-lg"
-                            : "bg-[#054232]/70 text-white backdrop-blur-sm"
+                        className={`flex min-w-0 max-w-[85%] items-start gap-1 sm:max-w-[75%] ${
+                          isUser ? "flex-row-reverse" : "flex-row"
                         }`}
                       >
-                        {isUser ? (
-                          <div
-                            className="whitespace-pre-wrap text-start"
-                            dir={contentDir}
-                          >
-                            {msg.content}
-                          </div>
-                        ) : (
-                          <AssistantMessage
-                            content={msg.content}
-                            parsed={assistantParsed}
-                            locale={locale}
-                            isStreaming={isStreamingMsg}
+                        <div
+                          className={`min-w-0 flex-1 overflow-x-hidden rounded-2xl px-5 py-3 text-sm leading-relaxed ${
+                            isUser
+                              ? "bg-white text-[#041C15] shadow-lg"
+                              : "bg-[#054232]/70 text-white backdrop-blur-sm"
+                          }`}
+                        >
+                          {isUser ? (
+                            <div className="whitespace-pre-wrap text-start" dir={contentDir}>
+                              {msg.content}
+                            </div>
+                          ) : (
+                            <AssistantMessage
+                              content={msg.content}
+                              parsed={assistantParsed}
+                              locale={locale}
+                              isStreaming={isStreamingMsg}
+                            />
+                          )}
+                        </div>
+                        <div className="shrink-0 self-start pt-0.5">
+                          <ChatMessageActions
+                            text={copyText}
+                            menuAlign={isUser ? "end" : "start"}
                           />
-                        )}
-                      </div>
-                      <div className="shrink-0 self-start pt-0.5">
-                        <ChatMessageActions
-                          text={copyText}
-                          menuAlign={isUser ? "end" : "start"}
-                        />
+                        </div>
                       </div>
                     </div>
+                  );
+                })}
+                {isLoading && (
+                  <div className="flex justify-start">
+                    <div className="rounded-2xl bg-[#054232]/50 px-5 py-3 text-sm text-[#A3B8B0]">
+                      <span className="inline-flex items-center gap-1">
+                        <span
+                          className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
+                          style={{ animationDelay: "0ms" }}
+                        />
+                        <span
+                          className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
+                          style={{ animationDelay: "200ms" }}
+                        />
+                        <span
+                          className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
+                          style={{ animationDelay: "400ms" }}
+                        />
+                        &nbsp;{t("aiThinking")}
+                      </span>
+                    </div>
                   </div>
-                );
-              })}
-              {isLoading && (
-                <div className="flex justify-start">
-                  <div className="rounded-2xl bg-[#054232]/50 px-5 py-3 text-sm text-[#A3B8B0]">
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
-                        style={{ animationDelay: "0ms" }}
-                      />
-                      <span
-                        className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
-                        style={{ animationDelay: "200ms" }}
-                      />
-                      <span
-                        className="inline-block h-2 w-2 animate-pulse rounded-full bg-[#00E699]"
-                        style={{ animationDelay: "400ms" }}
-                      />
-                      &nbsp;{t("aiThinking")}
-                    </span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {/* Input area */}
-            <div className="shrink-0 border-t border-[#00E699]/10 p-3 backdrop-blur-sm sm:p-4">
-              {currentFolder ? (
-                <p className="mb-2 text-xs text-[#00E699]/90">
-                  {t("chatScopedToFolder")}{" "}
-                  <span className="font-semibold text-white">{currentFolder.name}</span>
-                </p>
-              ) : null}
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  placeholder={
-                    currentFolder
-                      ? t("askAboutFolder", { folderName: currentFolder.name })
-                      : t("askKnowledgeBase")
-                  }
-                  className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-[#00E699]/20 bg-[#041C15]/50 px-4 py-3 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699]/50 focus:ring-1 focus:ring-[#00E699]/30"
-                />
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={isLoading || !input.trim()}
-                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-40 sm:w-auto"
-                  style={{
-                    background: "#054232",
-                    boxShadow: "0 0 12px rgba(5, 66, 50, 0.5)",
-                  }}
-                >
-                  <Send size={16} />
-                  {t("send")}
-                </button>
+                )}
+                <div ref={messagesEndRef} />
               </div>
-            </div>
-          </div>
-        ) : (
-          /* Knowledge base panel */
-          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 flex-col gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-4">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-white sm:text-base">
-                  {t("knowledgeBaseTitle")}
-                </h3>
-                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-[#A3B8B0]">
+
+              {/* Input area */}
+              <div className="shrink-0 border-t border-[#00E699]/10 p-3 backdrop-blur-sm sm:p-4">
+                {currentFolder ? (
+                  <p className="mb-2 text-xs text-[#00E699]/90">
+                    {t("chatScopedToFolder")}{" "}
+                    <span className="font-semibold text-white">{currentFolder.name}</span>
+                  </p>
+                ) : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                    placeholder={
+                      currentFolder
+                        ? t("askAboutFolder", { folderName: currentFolder.name })
+                        : t("askKnowledgeBase")
+                    }
+                    className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-[#00E699]/20 bg-[#041C15]/50 px-4 py-3 text-sm text-white placeholder-[#A3B8B0]/50 outline-none transition-all focus:border-[#00E699]/50 focus:ring-1 focus:ring-[#00E699]/30"
+                  />
                   <button
                     type="button"
-                    data-folder-drop-id={ROOT_DROP_ID}
-                    onClick={() => {
-                      if (draggingDocId || movingDocId) return;
-                      exitFolder();
+                    onClick={handleSend}
+                    disabled={isLoading || !input.trim()}
+                    className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-40 sm:w-auto"
+                    style={{
+                      background: "#054232",
+                      boxShadow: "0 0 12px rgba(5, 66, 50, 0.5)",
                     }}
-                    onDragOver={
-                      currentFolderId ? handleDragOver(ROOT_DROP_ID) : undefined
-                    }
-                    onDragLeave={
-                      currentFolderId ? handleDragLeave(ROOT_DROP_ID) : undefined
-                    }
-                    onDrop={
-                      currentFolderId ? handleDropOnTarget(ROOT_DROP_ID) : undefined
-                    }
-                    className={`rounded px-1 transition-colors hover:text-[#00E699] ${!currentFolderId ? "font-semibold text-white" : ""} ${currentFolderId ? dropHighlightClass(ROOT_DROP_ID) : ""}`}
-                    title={currentFolderId ? t("dropToRoot") : undefined}
                   >
-                    {t("root")}
+                    <Send size={16} />
+                    {t("send")}
                   </button>
-                  {currentFolder ? (
-                    <>
-                      <ChevronRight size={12} className="opacity-60" />
-                      <span className="truncate font-semibold text-white">
-                        {currentFolder.name}
-                      </span>
-                    </>
-                  ) : null}
                 </div>
-                <p className="mt-0.5 text-xs text-[#A3B8B0]">
-                  {t("documentsInView", { count: safeDocs.length })}
-                  {!currentFolderId && safeFolders.length > 0
-                    ? ` · ${t("foldersCount", { count: safeFolders.length })}`
-                    : ""}
-                </p>
               </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-                <button
-                  type="button"
-                  onClick={() => setFolderModalOpen(true)}
-                  disabled={docsUploading || Boolean(currentFolderId)}
-                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-[#00E699]/25 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#00E699] transition-all hover:bg-[#054232]/40 disabled:opacity-40 sm:w-auto"
-                  title={currentFolderId ? t("createFoldersFromRoot") : undefined}
-                >
-                  <Folder size={14} />
-                  {t("newFolder")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={docsUploading}
-                  className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-50 sm:w-auto"
-                  style={{
-                    background: "#054232",
-                    boxShadow: "0 0 12px rgba(5, 66, 50, 0.4)",
-                  }}
-                >
-                  <Upload size={14} />
-                  {docsUploading ? t("uploading") : t("uploadDocument")}
-                </button>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
             </div>
-
-            {uploadProgress && (
-              <UploadProgressCard
-                progress={uploadProgress}
-                filename={uploadingFilename ?? undefined}
-                locale={locale}
-              />
-            )}
-
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-              {draggingDocId && !currentFolderId ? (
-                <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
-                  {t("dragFileToFolder")}
-                </p>
-              ) : null}
-              {draggingDocId && currentFolderId ? (
-                <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
-                  {t("dropOnRootPrefix")}{" "}
-                  <span className="font-semibold">{t("root")}</span> {t("dropOnRootSuffix")}
-                </p>
-              ) : null}
-
-              {docsLoading ? (
-                <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-[#A3B8B0]">
-                  <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]" />
-                  {t("loadingDocuments")}
+          ) : (
+            /* Knowledge base panel */
+            <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="flex shrink-0 flex-col gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-4">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold text-white sm:text-base">
+                    {t("knowledgeBaseTitle")}
+                  </h3>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-[#A3B8B0]">
+                    <button
+                      type="button"
+                      data-folder-drop-id={ROOT_DROP_ID}
+                      onClick={() => {
+                        if (draggingDocId || movingDocId) return;
+                        exitFolder();
+                      }}
+                      onDragOver={currentFolderId ? handleDragOver(ROOT_DROP_ID) : undefined}
+                      onDragLeave={currentFolderId ? handleDragLeave(ROOT_DROP_ID) : undefined}
+                      onDrop={currentFolderId ? handleDropOnTarget(ROOT_DROP_ID) : undefined}
+                      className={`rounded px-1 transition-colors hover:text-[#00E699] ${!currentFolderId ? "font-semibold text-white" : ""} ${currentFolderId ? dropHighlightClass(ROOT_DROP_ID) : ""}`}
+                      title={currentFolderId ? t("dropToRoot") : undefined}
+                    >
+                      {t("root")}
+                    </button>
+                    {currentFolder ? (
+                      <>
+                        <ChevronRight size={12} className="opacity-60" />
+                        <span className="truncate font-semibold text-white">
+                          {currentFolder.name}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-xs text-[#A3B8B0]">
+                    {t("documentsInView", { count: safeDocs.length })}
+                    {!currentFolderId && safeFolders.length > 0
+                      ? ` · ${t("foldersCount", { count: safeFolders.length })}`
+                      : ""}
+                  </p>
                 </div>
-              ) : !currentFolderId && safeFolders.length === 0 && safeDocs.length === 0 ? (
-                <div
-                  className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm"
-                >
-                  <FolderOpen
-                    size={32}
-                    className="mx-auto mb-3 text-[#00E699]/60"
-                  />
-                  <p className="text-sm font-medium text-white">{t("noDocumentsYet")}</p>
-                  <p className="mt-1 text-xs text-[#A3B8B0]">{t("noDocumentsHint")}</p>
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setFolderModalOpen(true)}
+                    disabled={docsUploading || Boolean(currentFolderId)}
+                    className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-[#00E699]/25 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#00E699] transition-all hover:bg-[#054232]/40 disabled:opacity-40 sm:w-auto"
+                    title={currentFolderId ? t("createFoldersFromRoot") : undefined}
+                  >
+                    <Folder size={14} />
+                    {t("newFolder")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={docsUploading}
+                    className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wider text-white transition-all hover:brightness-110 disabled:opacity-50 sm:w-auto"
+                    style={{
+                      background: "#054232",
+                      boxShadow: "0 0 12px rgba(5, 66, 50, 0.4)",
+                    }}
+                  >
+                    <Upload size={14} />
+                    {docsUploading ? t("uploading") : t("uploadDocument")}
+                  </button>
                 </div>
-              ) : currentFolderId && safeDocs.length === 0 ? (
-                <div
-                  className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm"
-                >
-                  <Folder size={32} className="mx-auto mb-3 text-[#00E699]/60" />
-                  <p className="text-sm font-medium text-white">{t("folderEmpty")}</p>
-                  <p className="mt-1 text-xs text-[#A3B8B0]">{t("folderEmptyHint")}</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {!currentFolderId && safeFolders.length > 0 ? (
-                    <div>
-                      <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
-                        {t("folders")}
-                      </div>
-                      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {safeFolders.map((folder) => (
-                          <li
-                            key={folder.id}
-                            data-folder-drop-id={folder.id}
-                            onDragOver={handleDragOver(folder.id)}
-                            onDragLeave={handleDragLeave(folder.id)}
-                            onDrop={handleDropOnTarget(folder.id)}
-                            className={`overflow-hidden rounded-2xl border border-[#00E699]/15 backdrop-blur-md transition-colors ${dropHighlightClass(folder.id)}`}
-                            style={{ background: "rgba(4, 28, 21, 0.55)" }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (draggingDocId || movingDocId) return;
-                                openFolder(folder.id);
-                              }}
-                              className="flex min-h-[88px] w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-[#054232]/25"
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.txt"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
+
+              {uploadProgress && (
+                <UploadProgressCard
+                  progress={uploadProgress}
+                  filename={uploadingFilename ?? undefined}
+                  locale={locale}
+                />
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+                {draggingDocId && !currentFolderId ? (
+                  <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
+                    {t("dragFileToFolder")}
+                  </p>
+                ) : null}
+                {draggingDocId && currentFolderId ? (
+                  <p className="mb-3 rounded-lg border border-[#00E699]/25 bg-[#054232]/30 px-3 py-2 text-xs text-[#00E699]">
+                    {t("dropOnRootPrefix")} <span className="font-semibold">{t("root")}</span>{" "}
+                    {t("dropOnRootSuffix")}
+                  </p>
+                ) : null}
+
+                {docsLoading ? (
+                  <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-[#A3B8B0]">
+                    <span className="inline-block h-8 w-8 animate-spin rounded-full border-2 border-[#00E699]/30 border-t-[#00E699]" />
+                    {t("loadingDocuments")}
+                  </div>
+                ) : !currentFolderId && safeFolders.length === 0 && safeDocs.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm">
+                    <FolderOpen size={32} className="mx-auto mb-3 text-[#00E699]/60" />
+                    <p className="text-sm font-medium text-white">{t("noDocumentsYet")}</p>
+                    <p className="mt-1 text-xs text-[#A3B8B0]">{t("noDocumentsHint")}</p>
+                  </div>
+                ) : currentFolderId && safeDocs.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[#00E699]/20 bg-[#041C15]/40 px-6 py-16 text-center backdrop-blur-sm">
+                    <Folder size={32} className="mx-auto mb-3 text-[#00E699]/60" />
+                    <p className="text-sm font-medium text-white">{t("folderEmpty")}</p>
+                    <p className="mt-1 text-xs text-[#A3B8B0]">{t("folderEmptyHint")}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {!currentFolderId && safeFolders.length > 0 ? (
+                      <div>
+                        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
+                          {t("folders")}
+                        </div>
+                        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {safeFolders.map((folder) => (
+                            <li
+                              key={folder.id}
+                              data-folder-drop-id={folder.id}
+                              onDragOver={handleDragOver(folder.id)}
+                              onDragLeave={handleDragLeave(folder.id)}
+                              onDrop={handleDropOnTarget(folder.id)}
+                              className={`overflow-hidden rounded-2xl border border-[#00E699]/15 backdrop-blur-md transition-colors ${dropHighlightClass(folder.id)}`}
+                              style={{ background: "rgba(4, 28, 21, 0.55)" }}
                             >
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
-                                <Folder size={18} className="text-[#00E699]" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-white">
-                                  {folder.name}
-                                </p>
-                                <p className="mt-0.5 text-xs text-[#A3B8B0]">
-                                  {draggingDocId ? t("dropFileHere") : t("openFolder")}
-                                </p>
-                              </div>
-                              <ChevronRight size={16} className="shrink-0 text-[#00E699]/70" />
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {safeDocs.length > 0 ? (
-                    <div>
-                      <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
-                        {t("documents")}
-                      </div>
-                      <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {safeDocs.map((doc) => (
-                          <li
-                            key={doc.id}
-                            draggable={!docsUploading && movingDocId !== doc.id}
-                            onDragStart={handleDragStart(doc.id)}
-                            onDragEnd={handleDragEnd}
-                            onTouchStart={handleTouchStart(doc.id)}
-                            className={`flex min-h-[120px] flex-col rounded-2xl border border-[#00E699]/15 p-4 backdrop-blur-md transition-colors hover:bg-[#054232]/20 ${
-                              draggingDocId === doc.id ? "opacity-50" : ""
-                            } ${movingDocId === doc.id ? "pointer-events-none opacity-40" : "cursor-grab active:cursor-grabbing"}`}
-                            style={{ background: "rgba(4, 28, 21, 0.55)" }}
-                            title={t("dragToFolder")}
-                          >
-                            <div className="flex min-w-0 flex-1 items-start gap-3">
-                              <span
-                                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[#00E699]/50"
-                                aria-hidden
-                              >
-                                <GripVertical size={14} />
-                              </span>
-                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
-                                <FolderOpen size={16} className="text-[#00E699]" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="line-clamp-2 text-sm font-medium text-white">
-                                  {doc.filename}
-                                </p>
-                                <p className="mt-1 text-xs text-[#A3B8B0]">
-                                  {formatDocumentDate(doc.uploadedAt)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="mt-3 flex justify-end border-t border-[#00E699]/10 pt-3">
                               <button
                                 type="button"
-                                onClick={() => handleDeleteDoc(doc.id)}
-                                onTouchStart={(e) => e.stopPropagation()}
-                                className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-transparent px-3 py-2 text-base transition-all hover:border-red-500/30 hover:bg-red-900/25"
-                                aria-label={t("deleteDocumentNamed", { name: doc.filename })}
-                                title={t("deleteDocument")}
+                                onClick={() => {
+                                  if (draggingDocId || movingDocId) return;
+                                  openFolder(folder.id);
+                                }}
+                                className="flex min-h-[88px] w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-[#054232]/25"
                               >
-                                🗑️
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
+                                  <Folder size={18} className="text-[#00E699]" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-white">
+                                    {folder.name}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-[#A3B8B0]">
+                                    {draggingDocId ? t("dropFileHere") : t("openFolder")}
+                                  </p>
+                                </div>
+                                <ChevronRight size={16} className="shrink-0 text-[#00E699]/70" />
                               </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
 
-            <NewFolderModal
-              open={folderModalOpen}
-              loading={folderCreating}
-              onClose={() => setFolderModalOpen(false)}
-              onCreate={handleCreateFolder}
-            />
-          </div>
-        )}
-      </main>
+                    {safeDocs.length > 0 ? (
+                      <div>
+                        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-[#A3B8B0]">
+                          {t("documents")}
+                        </div>
+                        <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {safeDocs.map((doc) => (
+                            <li
+                              key={doc.id}
+                              draggable={!docsUploading && movingDocId !== doc.id}
+                              onDragStart={handleDragStart(doc.id)}
+                              onDragEnd={handleDragEnd}
+                              onTouchStart={handleTouchStart(doc.id)}
+                              className={`flex min-h-[120px] flex-col rounded-2xl border border-[#00E699]/15 p-4 backdrop-blur-md transition-colors hover:bg-[#054232]/20 ${
+                                draggingDocId === doc.id ? "opacity-50" : ""
+                              } ${movingDocId === doc.id ? "pointer-events-none opacity-40" : "cursor-grab active:cursor-grabbing"}`}
+                              style={{ background: "rgba(4, 28, 21, 0.55)" }}
+                              title={t("dragToFolder")}
+                            >
+                              <div className="flex min-w-0 flex-1 items-start gap-3">
+                                <span
+                                  className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center text-[#00E699]/50"
+                                  aria-hidden
+                                >
+                                  <GripVertical size={14} />
+                                </span>
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#054232]/60">
+                                  <FolderOpen size={16} className="text-[#00E699]" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="line-clamp-2 text-sm font-medium text-white">
+                                    {doc.filename}
+                                  </p>
+                                  <p className="mt-1 text-xs text-[#A3B8B0]">
+                                    {formatDocumentDate(doc.uploadedAt)}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex justify-end border-t border-[#00E699]/10 pt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDoc(doc.id)}
+                                  onTouchStart={(e) => e.stopPropagation()}
+                                  className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-lg border border-transparent px-3 py-2 text-base transition-all hover:border-red-500/30 hover:bg-red-900/25"
+                                  aria-label={t("deleteDocumentNamed", { name: doc.filename })}
+                                  title={t("deleteDocument")}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              <NewFolderModal
+                open={folderModalOpen}
+                loading={folderCreating}
+                onClose={() => setFolderModalOpen(false)}
+                onCreate={handleCreateFolder}
+              />
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

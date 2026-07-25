@@ -98,7 +98,8 @@ export function isStorageLimitApiPayload(parsed: {
   if (isStorageLimitErrorCode(parsed.error) || isStorageLimitErrorCode(parsed.code)) {
     return true;
   }
-  const combined = `${parsed.error ?? ""} ${parsed.code ?? ""} ${parsed.message ?? ""}`.toLowerCase();
+  const combined =
+    `${parsed.error ?? ""} ${parsed.code ?? ""} ${parsed.message ?? ""}`.toLowerCase();
   return (
     combined.includes("storage") ||
     combined.includes("quota") ||
@@ -131,9 +132,8 @@ export function createStorageLimitError(
 
 export function resolveUploadErrorMessage(err: unknown, locale?: AppLocale): string {
   const quotaMessage = getStorageQuotaExceededMessage(locale);
-  const uploadFailedMessage = locale === "ar"
-    ? "فشل الرفع. يرجى المحاولة مرة أخرى."
-    : "Upload failed. Please try again.";
+  const uploadFailedMessage =
+    locale === "ar" ? "فشل الرفع. يرجى المحاولة مرة أخرى." : "Upload failed. Please try again.";
 
   if (!(err instanceof Error)) return uploadFailedMessage;
   if (isStorageLimitErrorCode(err.code)) {
@@ -168,7 +168,11 @@ export async function fetchQuestionUsageSnapshot({
 
   try {
     const headers = await buildClientHeaders({ token, planMode });
-    const res = await fetchWithRetry(buildApiUrl("/api/documents/storage"), { headers }, { notify: false });
+    const res = await fetchWithRetry(
+      buildApiUrl("/api/documents/storage"),
+      { headers },
+      { notify: false },
+    );
     if (!res.ok) return null;
     const data = (await res.json()) as Record<string, unknown>;
     const limit = Number(data.monthly_question_limit);
@@ -314,6 +318,66 @@ export async function fetchTrialStatus({
   return body;
 }
 
+export interface TrialQuotaPayload {
+  email: string;
+  queries_used: number;
+  queries_limit: number;
+  storage_used_bytes: number;
+  storage_limit_bytes: number;
+}
+
+export async function sendTrialOtp(
+  email: string,
+): Promise<{ message?: string; error?: string; retry_after?: number }> {
+  const headers = await buildClientHeaders({ contentType: "application/json" });
+  const res = await fetchWithRetry(buildApiUrl("/api/auth/send-otp"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    message?: string;
+    error?: string;
+    retry_after?: number;
+  };
+  if (!res.ok) {
+    throw new Error(body.error || `Failed to send OTP (${res.status})`);
+  }
+  return body;
+}
+
+export async function verifyTrialOtp(
+  email: string,
+  otp: string,
+): Promise<{ token?: string; access_token?: string; jwt?: string; error?: string }> {
+  const headers = await buildClientHeaders({ contentType: "application/json" });
+  const res = await fetchWithRetry(buildApiUrl("/api/auth/verify-otp"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ email, otp }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    token?: string;
+    access_token?: string;
+    jwt?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    throw new Error(body.error || `OTP verification failed (${res.status})`);
+  }
+  return body;
+}
+
+export async function fetchTrialQuota(token: string): Promise<TrialQuotaPayload> {
+  const headers = await buildClientHeaders({ token, planMode: "free_trial" });
+  const res = await fetchWithRetry(buildApiUrl("/api/trial/quota"), { headers });
+  const body = (await res.json().catch(() => ({}))) as TrialQuotaPayload;
+  if (!res.ok) {
+    throw new Error("Failed to load trial quota.");
+  }
+  return body;
+}
+
 export const AUTH_STORAGE_KEYS = {
   /** @deprecated Prefer accessToken / preAuthToken; kept in sync for legacy readers. */
   token: "priva_token",
@@ -324,6 +388,23 @@ export const AUTH_STORAGE_KEYS = {
   user: "priva_user",
   legacyCompanyName: "company_name",
 } as const;
+
+export const TRIAL_EMAIL_STORAGE_KEY = "priva_trial_email";
+
+export function persistTrialEmail(email: string): void {
+  if (!canUseWebStorage()) return;
+  localStorage.setItem(TRIAL_EMAIL_STORAGE_KEY, email);
+}
+
+export function loadTrialEmail(): string {
+  if (!canUseWebStorage()) return "";
+  return localStorage.getItem(TRIAL_EMAIL_STORAGE_KEY) || "";
+}
+
+export function clearTrialEmail(): void {
+  if (!canUseWebStorage()) return;
+  localStorage.removeItem(TRIAL_EMAIL_STORAGE_KEY);
+}
 
 export const FACE_VERIFIED_KEY = "priva_face_verified";
 
@@ -404,7 +485,9 @@ export function getBearerAccessToken(): string | null {
   return null;
 }
 
-function writeSessionMeta(session: Pick<AuthSession, "companyId" | "companyName" | "username">): void {
+function writeSessionMeta(
+  session: Pick<AuthSession, "companyId" | "companyName" | "username">,
+): void {
   localStorage.setItem(AUTH_STORAGE_KEYS.companyId, session.companyId);
   localStorage.setItem(AUTH_STORAGE_KEYS.companyName, session.companyName);
   localStorage.setItem(AUTH_STORAGE_KEYS.user, session.username);
@@ -464,8 +547,7 @@ export function persistAuthSession(loginPayload: unknown, username: string): Aut
     companyId,
   );
 
-  const resolvedUsername =
-    readString(body.username, nestedUser.username, username) || username;
+  const resolvedUsername = readString(body.username, nestedUser.username, username) || username;
 
   const meta = {
     companyId: companyId || "default",
@@ -528,8 +610,7 @@ export function persistAccessTokenSession(
           localStorage.getItem(AUTH_STORAGE_KEYS.companyName) ||
           localStorage.getItem(AUTH_STORAGE_KEYS.legacyCompanyName) ||
           "default",
-        username:
-          meta?.username || localStorage.getItem(AUTH_STORAGE_KEYS.user) || "User",
+        username: meta?.username || localStorage.getItem(AUTH_STORAGE_KEYS.user) || "User",
       }
     : {
         companyId: meta?.companyId || "default",
@@ -599,8 +680,7 @@ export function loadAuthSession(): AuthSession | null {
   // Legacy single-key sessions (pre two-stage storage).
   if (legacyToken?.trim()) {
     const faceVerified =
-      sessionStorage.getItem(FACE_VERIFIED_KEY) === legacyToken ||
-      isGuestToken(legacyToken);
+      sessionStorage.getItem(FACE_VERIFIED_KEY) === legacyToken || isGuestToken(legacyToken);
     if (faceVerified) {
       return {
         token: legacyToken,
@@ -629,6 +709,7 @@ export function clearAuthSession(): void {
     localStorage.removeItem(key);
   });
   sessionStorage.removeItem(FACE_VERIFIED_KEY);
+  clearTrialEmail();
   clearWorkspaceClientState();
 }
 
@@ -789,8 +870,7 @@ function cloneRequestInit(init?: RequestInit): RequestInit | undefined {
 
   return {
     ...init,
-    headers:
-      init.headers instanceof Headers ? new Headers(init.headers) : init.headers,
+    headers: init.headers instanceof Headers ? new Headers(init.headers) : init.headers,
     body: cloneRequestBody(init.body ?? undefined),
   };
 }
@@ -1030,17 +1110,12 @@ export function normalizeDocuments(payload: unknown): DocumentRecord[] {
     return mapDocumentRecords(payload);
   }
 
-  const data =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : null;
+  const data = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
 
   const fromDocuments = data?.documents;
   const fromFiles = data?.files;
   const docs =
-    (Array.isArray(fromDocuments) && fromDocuments.length > 0
-      ? fromDocuments
-      : null) ??
+    (Array.isArray(fromDocuments) && fromDocuments.length > 0 ? fromDocuments : null) ??
     (Array.isArray(fromFiles) ? fromFiles : null) ??
     [];
 

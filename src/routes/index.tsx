@@ -11,10 +11,10 @@ import {
   isBackendUnreachableError,
   BACKEND_UNREACHABLE_MESSAGE,
   persistPlanMode,
-  setFaceVerifiedForToken,
+  type AuthSession,
 } from "../lib/api";
-import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
+import { FreeTrialOtpModal } from "../components/FreeTrialOtpModal";
 import { useAuth } from "../contexts/AuthContext";
 
 export const Route = createFileRoute("/")({
@@ -82,9 +82,9 @@ function LoginPage() {
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
   const [rateLimitRemainingSeconds, setRateLimitRemainingSeconds] = useState(0);
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
 
-  const isRateLimited =
-    rateLimitedUntil !== null && rateLimitRemainingSeconds > 0;
+  const isRateLimited = rateLimitedUntil !== null && rateLimitRemainingSeconds > 0;
   const awaitingCaptchaSolve = showCaptcha && !captchaToken;
 
   useEffect(() => {
@@ -177,9 +177,7 @@ function LoginPage() {
         const retrySeconds = parseRetryAfterSeconds(res, err);
         setRateLimitedUntil(Date.now() + retrySeconds * 1000);
         setRateLimitRemainingSeconds(retrySeconds);
-        setError(
-          t("tooManyAttempts", { time: formatCountdown(retrySeconds) }),
-        );
+        setError(t("tooManyAttempts", { time: formatCountdown(retrySeconds) }));
         return;
       }
 
@@ -203,35 +201,19 @@ function LoginPage() {
     } catch (err) {
       clearCaptchaToken();
       setShowCaptcha(false);
-      setError(
-        isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"),
-      );
+      setError(isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"));
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleStartFreeTrial = async () => {
-    setError("");
-    setIsLoading(true);
-    try {
-      persistPlanMode("free_trial");
-      clearAuth();
-      clearWorkspaceClientState();
-      await getDeviceFingerprint();
-      const guestSession = persistLogin(
-        {
-          token: "trial_guest",
-          company_name: "Free Trial",
-          user: { username: "Guest" },
-        },
-        "Guest",
-      );
-      setFaceVerifiedForToken(guestSession.token);
-      navigate({ to: "/chat" });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleStartFreeTrial = () => {
+    setOtpModalOpen(true);
+  };
+
+  const handleTrialVerified = (_session: AuthSession) => {
+    setOtpModalOpen(false);
+    void navigate({ to: "/chat" });
   };
 
   const rateLimitMessage = isRateLimited
@@ -255,9 +237,7 @@ function LoginPage() {
       <div className="relative z-10 flex h-full max-h-full w-full flex-row overflow-hidden">
         <aside
           className={`relative z-10 order-1 flex h-full max-h-full min-h-0 shrink-0 flex-col overflow-hidden backdrop-blur-md transition-all duration-300 ease-in-out ${
-            isSidebarOpen
-              ? "w-72 border-r border-[#00E699]/10"
-              : "w-0 border-r-0"
+            isSidebarOpen ? "w-72 border-r border-[#00E699]/10" : "w-0 border-r-0"
           }`}
           style={{ background: "rgba(4, 28, 21, 0.55)" }}
         >
@@ -268,12 +248,9 @@ function LoginPage() {
           >
             <h2 className="text-lg font-bold text-white">{t("sandboxTitle")}</h2>
             <p className="mt-1 text-xs text-[#A3B8B0]">
-              {t("accessMode")}{" "}
-              <span className="text-[#00E699]">{t("freeTrial")}</span>
+              {t("accessMode")} <span className="text-[#00E699]">{t("freeTrial")}</span>
             </p>
-            <p className="mt-3 text-xs leading-relaxed text-[#A3B8B0]">
-              {t("sandboxDescription")}
-            </p>
+            <p className="mt-3 text-xs leading-relaxed text-[#A3B8B0]">{t("sandboxDescription")}</p>
           </div>
 
           <div
@@ -423,10 +400,7 @@ function LoginPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2
-                id="login-info-title"
-                className="text-lg font-semibold text-white"
-              >
+              <h2 id="login-info-title" className="text-lg font-semibold text-white">
                 PRIVA AI
               </h2>
               <button
@@ -500,6 +474,12 @@ function LoginPage() {
           </div>
         </div>
       ) : null}
+
+      <FreeTrialOtpModal
+        open={otpModalOpen}
+        onClose={() => setOtpModalOpen(false)}
+        onVerified={handleTrialVerified}
+      />
     </div>
   );
 }
