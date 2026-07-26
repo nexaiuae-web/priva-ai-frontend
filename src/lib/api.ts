@@ -406,6 +406,51 @@ export function clearTrialEmail(): void {
   localStorage.removeItem(TRIAL_EMAIL_STORAGE_KEY);
 }
 
+export const VERIFIED_EMAILS_KEY = "priva_verified_emails";
+
+export interface VerifiedAccount {
+  email: string;
+  token: string;
+}
+
+export function loadVerifiedAccounts(): VerifiedAccount[] {
+  if (!canUseWebStorage()) return [];
+  try {
+    const raw = localStorage.getItem(VERIFIED_EMAILS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (a): a is VerifiedAccount =>
+        typeof a === "object" &&
+        a !== null &&
+        typeof (a as Record<string, unknown>).email === "string" &&
+        typeof (a as Record<string, unknown>).token === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveVerifiedAccount(email: string, token: string): VerifiedAccount[] {
+  if (!canUseWebStorage()) return [];
+  const accounts = loadVerifiedAccounts().filter(
+    (a) => a.email.toLowerCase() !== email.toLowerCase(),
+  );
+  accounts.unshift({ email, token });
+  localStorage.setItem(VERIFIED_EMAILS_KEY, JSON.stringify(accounts));
+  return accounts;
+}
+
+export function removeVerifiedAccount(email: string): VerifiedAccount[] {
+  if (!canUseWebStorage()) return [];
+  const accounts = loadVerifiedAccounts().filter(
+    (a) => a.email.toLowerCase() !== email.toLowerCase(),
+  );
+  localStorage.setItem(VERIFIED_EMAILS_KEY, JSON.stringify(accounts));
+  return accounts;
+}
+
 export const FACE_VERIFIED_KEY = "priva_face_verified";
 
 export const FACE_VERIFY_FAILED_MESSAGE =

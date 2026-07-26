@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Mail, ShieldCheck, X } from "lucide-react";
+import { ArrowLeft, Mail, ShieldCheck, Trash2, X } from "lucide-react";
 import {
   isBackendUnreachableError,
+  loadVerifiedAccounts,
   persistTrialEmail,
+  removeVerifiedAccount,
+  saveVerifiedAccount,
   sendTrialOtp,
   verifyTrialOtp,
   persistPlanMode,
@@ -11,6 +14,7 @@ import {
   setFaceVerifiedForToken,
   clearWorkspaceClientState,
   type AuthSession,
+  type VerifiedAccount,
 } from "../lib/api";
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
@@ -21,10 +25,14 @@ interface FreeTrialOtpModalProps {
 }
 
 const OTP_LENGTH = 6;
+type ModalStep = "accounts" | "email" | "otp";
 
 export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpModalProps) {
   const { t } = useTranslation();
-  const [step, setStep] = useState<"email" | "otp">("email");
+  const savedAccounts = loadVerifiedAccounts();
+  const hasSavedAccounts = savedAccounts.length > 0;
+
+  const [step, setStep] = useState<ModalStep>(() => (hasSavedAccounts ? "accounts" : "email"));
   const [email, setEmail] = useState("");
   const [otpDigits, setOtpDigits] = useState<string[]>(new Array(OTP_LENGTH).fill(""));
   const [error, setError] = useState("");
@@ -34,7 +42,8 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
 
   useEffect(() => {
     if (!open) {
-      setStep("email");
+      const accounts = loadVerifiedAccounts();
+      setStep(accounts.length > 0 ? "accounts" : "email");
       setEmail("");
       setOtpDigits(new Array(OTP_LENGTH).fill(""));
       setError("");
@@ -54,6 +63,43 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
   const focusOtpInput = useCallback((index: number) => {
     const next = Math.max(0, Math.min(OTP_LENGTH - 1, index));
     otpInputRefs.current[next]?.focus();
+  }, []);
+
+  const activateSession = useCallback(
+    (token: string, accountEmail: string) => {
+      persistPlanMode("free_trial");
+      clearWorkspaceClientState();
+      const session = persistAccessTokenSession(token, {
+        companyId: "free_trial",
+        companyName: "Free Trial",
+        username: accountEmail.split("@")[0],
+      });
+      setFaceVerifiedForToken(token);
+      persistTrialEmail(accountEmail);
+      onVerified(session);
+    },
+    [onVerified],
+  );
+
+  const handleContinueAs = useCallback(
+    async (account: VerifiedAccount) => {
+      setError("");
+      setIsLoading(true);
+      try {
+        activateSession(account.token, account.email);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activateSession],
+  );
+
+  const handleRemoveAccount = useCallback((e: React.MouseEvent, emailToRemove: string) => {
+    e.stopPropagation();
+    const remaining = removeVerifiedAccount(emailToRemove);
+    if (remaining.length === 0) {
+      setStep("email");
+    }
   }, []);
 
   const handleSendOtp = useCallback(
@@ -104,6 +150,7 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
           throw new Error(t("otpVerifyFailed"));
         }
 
+        saveVerifiedAccount(email.trim(), trialToken);
         const session = persistAccessTokenSession(trialToken, {
           companyId: "free_trial",
           companyName: "Free Trial",
@@ -245,7 +292,11 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
             ) : (
               <ShieldCheck size={20} className="text-[#00E699]" />
             )}
-            {step === "email" ? t("otpStartTrial") : t("otpVerifyCode")}
+            {step === "accounts"
+              ? t("otpContinueTrial")
+              : step === "email"
+                ? t("otpStartTrial")
+                : t("otpVerifyCode")}
           </h2>
           <button
             type="button"
@@ -258,7 +309,47 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
           </button>
         </div>
 
-        {step === "email" ? (
+        {step === "accounts" ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[#A3B8B0]">{t("otpSavedAccountsHint")}</p>
+            <div className="space-y-2">
+              {savedAccounts.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  onClick={() => void handleContinueAs(account)}
+                  disabled={isLoading}
+                  className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[#00E699]/15 bg-[#041C15]/50 px-4 py-3 text-left transition-all hover:border-[#00E699]/35 hover:bg-[#054232]/30 disabled:opacity-50"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">
+                    {account.email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleRemoveAccount(e, account.email)}
+                    disabled={isLoading}
+                    className="shrink-0 rounded-lg p-1.5 text-[#A3B8B0] opacity-0 transition-all hover:bg-red-900/30 hover:text-red-400 group-hover:opacity-100"
+                    aria-label={t("otpRemoveAccount", { email: account.email })}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setStep("email");
+                setEmail("");
+                setError("");
+              }}
+              disabled={isLoading}
+              className="w-full text-center text-xs font-medium text-[#00E699] underline-offset-2 transition hover:underline"
+            >
+              {t("otpUseDifferentEmail")}
+            </button>
+          </div>
+        ) : step === "email" ? (
           <form onSubmit={handleSendOtp} className="space-y-4">
             <p className="text-sm text-[#A3B8B0]">{t("otpEmailDescription")}</p>
             <div>
@@ -300,6 +391,19 @@ export function FreeTrialOtpModal({ open, onClose, onVerified }: FreeTrialOtpMod
             >
               {isLoading ? t("otpSending") : t("otpSendCode")}
             </button>
+            {hasSavedAccounts ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("accounts");
+                  setError("");
+                }}
+                disabled={isLoading}
+                className="w-full text-center text-xs font-medium text-[#00E699] underline-offset-2 transition hover:underline"
+              >
+                {t("otpBackToSaved")}
+              </button>
+            ) : null}
           </form>
         ) : (
           <div className="space-y-4">

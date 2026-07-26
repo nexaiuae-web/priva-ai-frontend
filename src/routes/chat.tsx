@@ -537,7 +537,10 @@ function ChatPage() {
 
     if (planMode === "free_trial") {
       const remaining = trialQuota
-        ? Math.max(0, (Number(trialQuota.queries_limit) || 5) - (Number(trialQuota.queries_used) || 0))
+        ? Math.max(
+            0,
+            (Number(trialQuota.queries_limit) || 5) - (Number(trialQuota.queries_used) || 0),
+          )
         : trialStatus
           ? Number(trialStatus.remaining_requests) || 0
           : 5;
@@ -906,91 +909,92 @@ function ChatPage() {
             {t("registeredEmail")} <span className="font-medium text-[#D5FBEA]">{trialEmail}</span>
           </p>
         ) : null}
-        {planMode === "free_trial" && trialQuota ? (
-          (() => {
-            const queriesUsed = Number(trialQuota.queries_used) || 0;
-            const queriesLimit = Number(trialQuota.queries_limit) || 5;
-            const queriesRemaining = Math.max(0, queriesLimit - queriesUsed);
-            const storageUsedBytes = Number(trialQuota.storage_used_bytes) || 0;
-            const storageLimitBytes = Number(trialQuota.storage_limit_bytes) || 5 * 1024 * 1024;
-            return (
-              <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
-                <p className="text-[10px] font-semibold text-white">
-                  {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
-                </p>
-                <p className="mt-2 text-[11px] text-[#A3B8B0]">
-                  {t("sovereignQueriesRemaining", {
-                    remaining: queriesRemaining,
-                    limit: queriesLimit,
-                  })}
-                </p>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
-                  <div
-                    className="h-full rounded bg-[#00E699]"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(0, (queriesUsed / Math.max(1, queriesLimit)) * 100),
-                      )}%`,
-                    }}
-                  />
+        {planMode === "free_trial" && trialQuota
+          ? (() => {
+              const queriesUsed = Number(trialQuota.queries_used) || 0;
+              const queriesLimit = Number(trialQuota.queries_limit) || 5;
+              const queriesRemaining = Math.max(0, queriesLimit - queriesUsed);
+              const storageUsedBytes = Number(trialQuota.storage_used_bytes) || 0;
+              const storageLimitBytes = Number(trialQuota.storage_limit_bytes) || 5 * 1024 * 1024;
+              return (
+                <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
+                  <p className="text-[10px] font-semibold text-white">
+                    {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
+                  </p>
+                  <p className="mt-2 text-[11px] text-[#A3B8B0]">
+                    {t("sovereignQueriesRemaining", {
+                      remaining: queriesRemaining,
+                      limit: queriesLimit,
+                    })}
+                  </p>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+                    <div
+                      className="h-full rounded bg-[#00E699]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(0, (queriesUsed / Math.max(1, queriesLimit)) * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
+                    {t("knowledgeBaseStorageUsed", {
+                      used: (storageUsedBytes / (1024 * 1024)).toFixed(1),
+                      limit: (storageLimitBytes / (1024 * 1024)).toFixed(1),
+                    })}
+                  </p>
+                  <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+                    <div
+                      className="h-full rounded bg-[#00E699]"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(0, (storageUsedBytes / Math.max(1, storageLimitBytes)) * 100),
+                        )}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-                <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
-                  {t("knowledgeBaseStorageUsed", {
-                    used: (storageUsedBytes / (1024 * 1024)).toFixed(1),
-                    limit: (storageLimitBytes / (1024 * 1024)).toFixed(1),
-                  })}
-                </p>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
-                  <div
-                    className="h-full rounded bg-[#00E699]"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(0, (storageUsedBytes / Math.max(1, storageLimitBytes)) * 100),
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })()
-        ) : planMode === "free_trial" && trialStatus ? (
-          (() => {
-            const remainingRequests = Number(trialStatus.remaining_requests) || 0;
-            const requestLimit = Number(trialStatus.request_limit) || 5;
-            const storageUsedBytes = Number(trialStatus.storage_used_bytes) || 0;
-            const storageLimitBytes = Number(trialStatus.storage_limit_bytes) || 5 * 1024 * 1024;
-            return (
-              <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
-                <p className="text-[10px] font-semibold text-white">
-                  {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
-                </p>
-                <p className="mt-2 text-[11px] text-[#A3B8B0]">
-                  {t("questionsLeft", {
-                    remaining: remainingRequests,
-                    limit: requestLimit,
-                  })}
-                </p>
-                <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
-                  {t("storage")} {(storageUsedBytes / (1024 * 1024)).toFixed(1)}MB/
-                  {(storageLimitBytes / (1024 * 1024)).toFixed(1)}MB
-                </p>
-                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
-                  <div
-                    className="h-full rounded bg-[#00E699]"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.max(0, (storageUsedBytes / Math.max(1, storageLimitBytes)) * 100),
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })()
-        ) : null}
+              );
+            })()
+          : planMode === "free_trial" && trialStatus
+            ? (() => {
+                const remainingRequests = Number(trialStatus.remaining_requests) || 0;
+                const requestLimit = Number(trialStatus.request_limit) || 5;
+                const storageUsedBytes = Number(trialStatus.storage_used_bytes) || 0;
+                const storageLimitBytes =
+                  Number(trialStatus.storage_limit_bytes) || 5 * 1024 * 1024;
+                return (
+                  <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-3">
+                    <p className="text-[10px] font-semibold text-white">
+                      {t("plan")} <span className="text-[#00E699]">{t("freeTrial")}</span>
+                    </p>
+                    <p className="mt-2 text-[11px] text-[#A3B8B0]">
+                      {t("questionsLeft", {
+                        remaining: remainingRequests,
+                        limit: requestLimit,
+                      })}
+                    </p>
+                    <p className="mt-2.5 text-[11px] text-[#A3B8B0]">
+                      {t("storage")} {(storageUsedBytes / (1024 * 1024)).toFixed(1)}MB/
+                      {(storageLimitBytes / (1024 * 1024)).toFixed(1)}MB
+                    </p>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded bg-[#0D3127]">
+                      <div
+                        className="h-full rounded bg-[#00E699]"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(0, (storageUsedBytes / Math.max(1, storageLimitBytes)) * 100),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()
+            : null}
         {planMode !== "free_trial" && questionUsage ? (
           <div className="mt-3 rounded-lg border border-[#00E699]/20 bg-[#041C15]/45 p-2">
             <p className="text-[10px] text-[#A3B8B0]">

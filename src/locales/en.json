@@ -120,6 +120,11 @@
   "otpResend": "Resend Code",
   "otpResendIn": "Resend code in {{seconds}}s",
   "back": "Back",
+  "otpContinueTrial": "Continue Free Trial",
+  "otpSavedAccountsHint": "Choose an account to continue.",
+  "otpUseDifferentEmail": "Use a different email",
+  "otpRemoveAccount": "Remove {{email}}",
+  "otpBackToSaved": "← Back to saved accounts",
   "registeredEmail": "Registered:",
   "sovereignQueriesRemaining": "{{remaining}} / {{limit}} queries remaining",
   "knowledgeBaseStorageUsed": "{{used}} MB / {{limit}} MB used"
