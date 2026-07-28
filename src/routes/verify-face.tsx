@@ -12,8 +12,12 @@ import {
 } from "../lib/api";
 import { enforceLoginSession } from "../lib/authGuard";
 import { useAuth } from "../contexts/AuthContext";
-import { preprocessFaceCaptureCanvas } from "../lib/faceCapturePreprocess";
 import { analyzeFaceFrame } from "../lib/faceDetectionGuide";
+import {
+  loadFaceLandmarker,
+  extractFaceLandmarkVector,
+  clearFaceLandmarker,
+} from "../lib/faceLandmarker";
 
 const FACE_DETECTION_INTERVAL_MS = 280;
 
@@ -138,33 +142,21 @@ function VerifyFacePage() {
     setVerificationFailed(false);
 
     try {
-      const MAX_DIMENSION = 480;
-      const canvas = document.createElement("canvas");
-      canvas.width = MAX_DIMENSION;
-      canvas.height = MAX_DIMENSION;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        throw new Error(FACE_VERIFY_FAILED_MESSAGE);
-      }
-
-      const size = Math.min(video.videoWidth, video.videoHeight);
-      const offsetX = (video.videoWidth - size) / 2;
-      const offsetY = (video.videoHeight - size) / 2;
-      ctx.drawImage(video, offsetX, offsetY, size, size, 0, 0, MAX_DIMENSION, MAX_DIMENSION);
-
-      const optimized = preprocessFaceCaptureCanvas(canvas);
-      const dataUrl = optimized.toDataURL("image/jpeg", 0.7);
-
-      if (dataUrl.length > 102400) {
-        throw new Error("Captured image too large. Please try again.");
-      }
-
       const FETCH_TIMEOUT_MS = 8000;
+
+      setStatus("Analyzing face…");
+
+      const vector = await extractFaceLandmarkVector(video);
+      if (!vector) {
+        throw new Error("No face detected. Please ensure your face is visible and well-lit.");
+      }
+
       const verifyResult = await Promise.race([
-        verifyFaceSnapshot(dataUrl, {
+        verifyFaceSnapshot(undefined, {
           onRetry: () => {
             setStatus("Connection unstable, retrying…");
           },
+          faceLandmarkVector: Array.from(vector),
         }),
         new Promise<never>((_, reject) =>
           setTimeout(
@@ -295,6 +287,7 @@ function VerifyFacePage() {
 
   useEffect(() => {
     refreshFromStorage();
+    loadFaceLandmarker().catch(() => {});
     const session = loadAuthSession();
     if (!session?.preAuthToken && !session?.token) {
       clearAuth();
@@ -316,6 +309,7 @@ function VerifyFacePage() {
 
     return () => {
       stopCamera();
+      clearFaceLandmarker();
     };
   }, [
     clearAuth,

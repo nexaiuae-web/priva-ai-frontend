@@ -989,9 +989,10 @@ export async function fetchWithRetry(
 }
 
 export async function verifyFaceSnapshot(
-  imageBase64: string,
+  imageBase64: string | undefined,
   options?: {
     onRetry?: () => void;
+    faceLandmarkVector?: number[];
   },
 ): Promise<{
   success: boolean;
@@ -1017,12 +1018,20 @@ export async function verifyFaceSnapshot(
     planMode: loadPlanMode(),
     contentType: "application/json",
   });
+
+  const body: Record<string, unknown> = {};
+  if (options?.faceLandmarkVector) {
+    body.face_embedding_vector = options.faceLandmarkVector;
+  } else {
+    body.image = imageBase64;
+  }
+
   const res = await fetchWithRetry(
     buildApiUrl("/api/auth/verify-face"),
     {
       method: "POST",
       headers,
-      body: JSON.stringify({ image: imageBase64 }),
+      body: JSON.stringify(body),
     },
     {
       onRetry: () => options?.onRetry?.(),
