@@ -287,7 +287,10 @@ function VerifyFacePage() {
 
   useEffect(() => {
     refreshFromStorage();
-    loadFaceLandmarker().catch(() => {});
+    setStatus("Downloading AI models…");
+    loadFaceLandmarker().catch(() => {
+      setStatus("Model download failed — tap Retry");
+    });
     const session = loadAuthSession();
     if (!session?.preAuthToken && !session?.token) {
       clearAuth();
