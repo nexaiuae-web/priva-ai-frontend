@@ -208,14 +208,8 @@ function VerifyFacePage() {
 
 function extractPasskeyErrorMessage(err: unknown): string {
   if (err instanceof Error) {
-    if (err.name === "NotAllowedError" || err.message.includes("not allowed")) {
-      return "Sign-in was cancelled. Please try again.";
-    }
-    if (err.name === "SecurityError") {
-      return "Biometric sign-in is not supported in this browser. Use a supported browser or a different device.";
-    }
-    if (err.message.includes("authenticator")) {
-      return "No biometric credential found for this account. Please use another sign-in method or enroll a new passkey.";
+    if (err.name === "NotAllowedError") {
+      return "Operation canceled by user";
     }
     return err.message;
   }
