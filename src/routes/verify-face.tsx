@@ -1,25 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
 import { RequireAuth } from "../components/RequireAuth";
 import {
-  FACE_PROFILE_NOT_CONFIGURED_MESSAGE,
-  FACE_VERIFY_FAILED_MESSAGE,
-  isBackendUnreachableError,
   isFaceVerifiedForCurrentSession,
   loadAuthSession,
-  verifyFaceSnapshot,
+  persistAccessTokenSession,
+  setFaceVerifiedForToken,
 } from "../lib/api";
 import { enforceLoginSession } from "../lib/authGuard";
 import { useAuth } from "../contexts/AuthContext";
-import { analyzeFaceFrame } from "../lib/faceDetectionGuide";
-import {
-  loadFaceLandmarker,
-  extractFaceLandmarkVector,
-  clearFaceLandmarker,
-} from "../lib/faceLandmarker";
-
-const FACE_DETECTION_INTERVAL_MS = 280;
+import { PASSKEY_SUPPORTED, handlePasskeyLogin, handlePasskeyRegister } from "../lib/passkey";
 
 function ProtectedVerifyFacePage() {
   return (
@@ -39,317 +29,112 @@ export const Route = createFileRoute("/verify-face")({
 
 function VerifyFacePage() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
   const { completeFaceVerification, clearAuth, refreshFromStorage } = useAuth();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const captureTimerRef = useRef<number | null>(null);
-  const faceDetectionTimerRef = useRef<number | null>(null);
-  const isVerifyingRef = useRef(false);
-
-  const [status, setStatus] = useState("Requesting camera access…");
+  const [status, setStatus] = useState("Preparing passkey sign-in\u2026");
   const [error, setError] = useState("");
-  const [verificationFailed, setVerificationFailed] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [flashEffect, setFlashEffect] = useState(false);
-  const [isLightAssistActive, setIsLightAssistActive] = useState(false);
-  const isE2eFaceBypassEnabled =
-    typeof window !== "undefined" && localStorage.getItem("E2E_FACE_BYPASS_ENABLED") === "true";
-
-  const stopFaceDetectionLoop = useCallback(() => {
-    if (faceDetectionTimerRef.current != null) {
-      window.clearTimeout(faceDetectionTimerRef.current);
-      faceDetectionTimerRef.current = null;
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    stopFaceDetectionLoop();
-    setFlashEffect(false);
-    if (captureTimerRef.current != null) {
-      window.clearTimeout(captureTimerRef.current);
-      captureTimerRef.current = null;
-    }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, [stopFaceDetectionLoop]);
-
-  const startFaceDetectionLoop = useCallback(() => {
-    stopFaceDetectionLoop();
-
-    const tick = async () => {
-      const video = videoRef.current;
-
-      if (!video || !streamRef.current?.active || isVerifyingRef.current) {
-        if (isVerifyingRef.current) {
-          setFlashEffect(false);
-        }
-        faceDetectionTimerRef.current = window.setTimeout(() => {
-          void tick();
-        }, FACE_DETECTION_INTERVAL_MS);
-        return;
-      }
-
-      try {
-        const analysis = await analyzeFaceFrame(video);
-        setFlashEffect(analysis.needsFlash);
-      } catch {
-        // Ignore transient frame-analysis errors.
-      }
-
-      faceDetectionTimerRef.current = window.setTimeout(() => {
-        void tick();
-      }, FACE_DETECTION_INTERVAL_MS);
-    };
-
-    void tick();
-  }, [stopFaceDetectionLoop]);
+  const isVerifyingRef = useRef(false);
 
   useEffect(() => {
     isVerifyingRef.current = isVerifying;
-    if (isVerifying) {
-      setFlashEffect(false);
-    }
   }, [isVerifying]);
 
-  const captureAndVerify = useCallback(async () => {
+  const handleBiometricSignIn = useCallback(async () => {
     if (isVerifyingRef.current) return;
+    setIsVerifying(true);
+    setError("");
+    setStatus("Waiting for biometric\u2026");
 
-    const video = videoRef.current;
     const session = loadAuthSession();
-
-    if (!session?.preAuthToken && !session?.token) {
+    if (!session?.token) {
       clearAuth();
       navigate({ to: "/" });
       return;
     }
 
-    if (!video || video.videoWidth === 0) {
-      setError("Camera is not ready. Please try again.");
-      setVerificationFailed(true);
-      setStatus("Camera not ready");
-      return;
-    }
-
-    setIsVerifying(true);
-    isVerifyingRef.current = true;
-    setStatus("Verifying identity…");
-    setError("");
-    setVerificationFailed(false);
-
     try {
-      const FETCH_TIMEOUT_MS = 8000;
-
-      setStatus("Analyzing face…");
-
-      const vector = await extractFaceLandmarkVector(video);
-      if (!vector) {
-        throw new Error("No face detected. Please ensure your face is visible and well-lit.");
+      const result = await handlePasskeyLogin(session.token);
+      if (!result.verified || !result.access_token) {
+        throw new Error("Biometric verification failed. Please try again.");
       }
-
-      const verifyResult = await Promise.race([
-        verifyFaceSnapshot(undefined, {
-          onRetry: () => {
-            setStatus("Connection unstable, retrying…");
-          },
-          faceLandmarkVector: Array.from(vector),
-        }),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () =>
-              reject(
-                new Error("Verification timed out. Please check your connection and try again."),
-              ),
-            FETCH_TIMEOUT_MS,
-          ),
-        ),
-      ]);
-
-      if (!verifyResult.access_token) {
-        throw new Error(FACE_VERIFY_FAILED_MESSAGE);
-      }
-      // Stage-2: Auth context swaps pre_auth_token → access_token.
-      completeFaceVerification(verifyResult.access_token);
-      setIsLightAssistActive(false);
-      stopCamera();
+      persistAccessTokenSession(result.access_token);
+      setFaceVerifiedForToken(result.access_token);
+      completeFaceVerification(result.access_token);
       navigate({ to: "/chat" });
     } catch (err) {
-      const code = (err as Error & { code?: string }).code;
-      const message =
-        code === "FACE_PROFILE_NOT_CONFIGURED"
-          ? FACE_PROFILE_NOT_CONFIGURED_MESSAGE
-          : isBackendUnreachableError(err)
-            ? "Unable to reach the verification server. Please check your connection and try again."
-            : (err as Error).message || FACE_VERIFY_FAILED_MESSAGE;
+      const message = extractPasskeyErrorMessage(err);
       setError(message);
-      setVerificationFailed(true);
-      if (code === "FACE_PROFILE_NOT_CONFIGURED") {
-        setStatus("Face profile not configured");
-      } else if (isBackendUnreachableError(err)) {
-        setStatus("Connection failed — please try again");
-      } else {
-        setStatus("Verification failed — adjust lighting or position and try again");
-        setIsLightAssistActive(true);
-      }
+      setStatus("Sign-in failed");
     } finally {
       setIsVerifying(false);
-      isVerifyingRef.current = false;
-      setCountdown(null);
     }
-  }, [clearAuth, completeFaceVerification, navigate, stopCamera]);
+  }, [clearAuth, completeFaceVerification, navigate]);
 
-  const scheduleCapture = useCallback(() => {
-    if (captureTimerRef.current != null) {
-      window.clearTimeout(captureTimerRef.current);
-      captureTimerRef.current = null;
-    }
-
-    setStatus("Hold still — capturing in 2 seconds…");
-    setCountdown(2);
-    captureTimerRef.current = window.setTimeout(() => {
-      setCountdown(1);
-      captureTimerRef.current = window.setTimeout(() => {
-        setCountdown(null);
-        void captureAndVerify();
-      }, 1000);
-    }, 1000);
-  }, [captureAndVerify]);
-
-  const startCamera = useCallback(async () => {
-    if (captureTimerRef.current != null) {
-      window.clearTimeout(captureTimerRef.current);
-      captureTimerRef.current = null;
-    }
-    setCountdown(null);
-    setIsVerifying(false);
+  const handleRegisterPasskey = useCallback(async () => {
+    if (isVerifyingRef.current) return;
+    setIsVerifying(true);
     setError("");
-    setVerificationFailed(false);
-    setStatus("Requesting camera access…");
+    setStatus("Setting up passkey\u2026");
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 640 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setStatus("Position your face in the circle");
-      startFaceDetectionLoop();
-      scheduleCapture();
-    } catch {
-      setError("Camera access is required for FaceID verification.");
-      setVerificationFailed(true);
-      setStatus("Camera access denied");
-    }
-  }, [scheduleCapture, startFaceDetectionLoop]);
-
-  const handleRetry = useCallback(() => {
-    setError("");
-    setVerificationFailed(false);
-    setIsVerifying(false);
-    setCountdown(null);
-    setIsLightAssistActive(true);
-
-    if (captureTimerRef.current != null) {
-      window.clearTimeout(captureTimerRef.current);
-      captureTimerRef.current = null;
-    }
-
-    const video = videoRef.current;
-    if (streamRef.current?.active && video?.srcObject) {
-      setStatus("Position your face in the circle");
-      startFaceDetectionLoop();
-      scheduleCapture();
+    const session = loadAuthSession();
+    if (!session?.token) {
+      clearAuth();
+      navigate({ to: "/" });
       return;
     }
 
-    stopCamera();
-    void startCamera();
-  }, [scheduleCapture, startCamera, startFaceDetectionLoop, stopCamera]);
+    try {
+      const result = await handlePasskeyRegister(session.token);
+      if (!result.verified) {
+        throw new Error("Passkey registration was not completed.");
+      }
+      setStatus("Passkey registered successfully!");
+    } catch (err) {
+      const message = extractPasskeyErrorMessage(err);
+      setError(message);
+      setStatus("Registration failed");
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [clearAuth, navigate]);
 
   const handleReturnToLogin = useCallback(() => {
-    setIsLightAssistActive(false);
-    stopCamera();
     clearAuth();
     navigate({ to: "/" });
-  }, [clearAuth, navigate, stopCamera]);
-
-  const toggleLightAssist = useCallback(() => {
-    setIsLightAssistActive((prev) => !prev);
-  }, []);
+  }, [clearAuth, navigate]);
 
   useEffect(() => {
     refreshFromStorage();
-    setStatus("Downloading AI models…");
-    loadFaceLandmarker().catch(() => {
-      setStatus("Model download failed — tap Retry");
-    });
     const session = loadAuthSession();
-    if (!session?.preAuthToken && !session?.token) {
+    if (!session?.token) {
       clearAuth();
-      void navigate({ to: "/", replace: true });
-      return;
-    }
-    if (isE2eFaceBypassEnabled && session.username?.trim()) {
-      // E2E: promote current pre-auth/legacy token to access and mark verified.
-      completeFaceVerification(session.token);
-      void navigate({ to: "/chat" });
+      navigate({ to: "/", replace: true });
       return;
     }
     if (isFaceVerifiedForCurrentSession() && session.accessToken) {
-      void navigate({ to: "/chat" });
+      navigate({ to: "/chat" });
       return;
     }
-
-    void startCamera();
-
-    return () => {
-      stopCamera();
-      clearFaceLandmarker();
-    };
-  }, [
-    clearAuth,
-    completeFaceVerification,
-    isE2eFaceBypassEnabled,
-    navigate,
-    refreshFromStorage,
-    startCamera,
-    stopCamera,
-  ]);
-
-  const showErrorActions = Boolean(error) || verificationFailed;
-  const showCameraGlow = flashEffect || isLightAssistActive;
+    if (!PASSKEY_SUPPORTED) {
+      setStatus("Biometric sign-in not available");
+      setError(
+        "Your device does not support Face ID, Touch ID, or passkeys. Please use another sign-in method.",
+      );
+    } else {
+      setStatus("Verify your identity with biometrics");
+    }
+  }, [clearAuth, navigate, refreshFromStorage]);
 
   return (
-    <div
-      className="relative flex min-h-screen items-center justify-center overflow-hidden"
-      style={{
-        background: isLightAssistActive ? "#FFFFFF" : "#041C15",
-        transition: "background 0.3s ease-in-out",
-      }}
-    >
-      <div
-        className="absolute inset-0 bg-gradient-to-b from-[#041C15]/90 via-[#0B2B22]/80 to-[#041C15]/95"
-        style={{
-          opacity: isLightAssistActive ? 0 : 1,
-          transition: "opacity 0.3s ease-in-out",
-        }}
-      />
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden">
+      <div className="absolute inset-0 bg-gradient-to-b from-[#041C15]/90 via-[#0B2B22]/80 to-[#041C15]/95" />
 
-      {/* Verification card — same fluid breakpoints as login */}
       <div className="relative z-10 w-full max-w-[90%] px-4 sm:max-w-[450px] sm:px-6 md:max-w-[500px] lg:max-w-[560px]">
         <div
-          className="rounded-2xl border border-[#00E699]/20 p-6 text-center backdrop-blur-xl sm:p-8 md:p-10 lg:p-10"
+          className="rounded-2xl border border-[#00E699]/20 p-6 text-center backdrop-blur-xl sm:p-8 md:p-10"
           style={{ background: "rgba(4, 28, 21, 0.65)" }}
         >
-          <div className="mb-6 sm:mb-8 md:mb-10">
+          <div className="mb-6 sm:mb-8">
             <h1
               className="text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-5xl"
               style={{
@@ -357,84 +142,82 @@ function VerifyFacePage() {
                 textShadow: "0 0 24px rgba(0, 230, 153, 0.45)",
               }}
             >
-              FaceID Verification
+              Secure Sign-In
             </h1>
             <p className="mt-2 text-xs text-[#A3B8B0] sm:text-sm md:text-base">{status}</p>
           </div>
 
-          <div
-            className={`face-verify-camera relative mx-auto mt-6 h-52 w-52 sm:mt-8 sm:h-56 sm:w-56 md:mt-10 md:h-64 md:w-64 lg:h-72 lg:w-72 ${
-              showCameraGlow ? "face-verify-camera--flash" : ""
-            } ${isLightAssistActive ? "face-verify-camera--light-assist" : ""}`}
-          >
-            <div
-              className={`face-verify-frame rounded-full ${
-                showCameraGlow ? "face-verify-frame--flash" : ""
-              } ${isLightAssistActive ? "face-verify-frame--light-assist" : ""}`}
-              aria-hidden
-            />
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="face-verify-video h-full w-full rounded-full object-cover"
-            />
-            {countdown != null && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-full bg-black/40 text-4xl font-bold text-white sm:text-5xl lg:text-6xl">
-                {countdown}
-              </div>
-            )}
+          <div className="flex flex-col gap-4">
+            <button
+              type="button"
+              onClick={handleBiometricSignIn}
+              disabled={isVerifying || !PASSKEY_SUPPORTED}
+              className="flex w-full items-center justify-center gap-3 rounded-lg bg-[#00E699] py-4 text-sm font-bold tracking-widest text-[#041C15] uppercase shadow-[0_0_20px_rgba(0,230,153,0.25)] transition hover:bg-[#00cc88] disabled:cursor-not-allowed disabled:opacity-50 sm:text-base"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-3.31 0-6 2.01-6 4.5V19h12v-1.5c0-2.49-2.69-4.5-6-4.5z"
+                />
+              </svg>
+              Sign in with Face ID / Touch ID
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRegisterPasskey}
+              disabled={isVerifying || !PASSKEY_SUPPORTED}
+              className="w-full rounded-lg border border-[#00E699]/25 py-4 text-sm text-[#A3B8B0] transition hover:border-[#00E699]/40 hover:text-[#00E699] disabled:opacity-50 sm:text-base"
+            >
+              Enable Passkey on this Device
+            </button>
           </div>
 
           {error && (
             <div
               role="alert"
-              className="mt-6 rounded-lg border border-red-500/50 bg-red-950/40 px-4 py-3 text-left text-sm text-red-400 sm:mt-7 sm:text-base md:mt-8"
+              className="mt-6 rounded-lg border border-red-500/50 bg-red-950/40 px-4 py-3 text-left text-sm text-red-400 sm:text-base"
             >
               {error}
             </div>
           )}
 
-          {(error || verificationFailed || isLightAssistActive) && (
+          <div className="mt-6">
             <button
               type="button"
-              onClick={toggleLightAssist}
+              onClick={handleReturnToLogin}
               disabled={isVerifying}
-              className="mt-3 text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
+              className="text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
             >
-              {isLightAssistActive ? t("disableScreenFlash") : t("enableScreenFlash")}
+              Return to sign in
             </button>
-          )}
-
-          {isVerifying && (
-            <p className="mt-4 text-xs tracking-widest text-[#00E699]/80 uppercase sm:mt-5 sm:text-sm md:text-base">
-              Scanning…
-            </p>
-          )}
-
-          {showErrorActions && (
-            <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:gap-4 md:mt-10">
-              <button
-                type="button"
-                onClick={handleRetry}
-                disabled={isVerifying}
-                className="w-full rounded-lg bg-[#00E699] py-3.5 text-sm font-bold tracking-widest text-[#041C15] uppercase shadow-[0_0_20px_rgba(0,230,153,0.25)] transition hover:bg-[#00cc88] disabled:cursor-not-allowed disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
-              >
-                Try Again
-              </button>
-              <button
-                type="button"
-                onClick={handleReturnToLogin}
-                disabled={isVerifying}
-                className="w-full rounded-lg border border-[#00E699]/25 py-3.5 text-sm text-[#A3B8B0] transition hover:border-[#00E699]/40 hover:text-[#00E699] disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
-              >
-                Return to login
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
   );
+}
+
+function extractPasskeyErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.name === "NotAllowedError" || err.message.includes("not allowed")) {
+      return "Sign-in was cancelled. Please try again.";
+    }
+    if (err.name === "SecurityError") {
+      return "Biometric sign-in is not supported in this browser. Use a supported browser or a different device.";
+    }
+    if (err.message.includes("authenticator")) {
+      return "No biometric credential found for this account. Please use another sign-in method or enroll a new passkey.";
+    }
+    return err.message;
+  }
+  return "An unexpected error occurred. Please try again.";
 }
