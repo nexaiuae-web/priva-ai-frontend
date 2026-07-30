@@ -152,6 +152,7 @@ function LoginPage() {
       const res = await fetchWithRetry(`${API_BASE}/api/login`, {
         method: "POST",
         headers: await buildClientHeaders({
+          token: null,
           contentType: "application/json",
           planMode: "premium",
         }),

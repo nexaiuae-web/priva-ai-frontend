@@ -263,7 +263,7 @@ export function persistPlanMode(mode: PlanMode): void {
 }
 
 export async function buildClientHeaders({
-  token = null,
+  token: explicitToken,
   planMode = "premium",
   contentType = null,
   accept = null,
@@ -276,10 +276,11 @@ export async function buildClientHeaders({
   const headers: Record<string, string> = {};
   if (contentType) headers["Content-Type"] = contentType;
   if (accept) headers.Accept = accept;
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const resolvedToken = explicitToken === null ? null : (explicitToken ?? getBearerAccessToken());
+  if (resolvedToken) headers.Authorization = `Bearer ${resolvedToken}`;
   const fingerprint = await getDeviceFingerprint();
   headers["x-device-fingerprint"] = fingerprint;
-  const effectivePlanMode: PlanMode = token === "trial_guest" ? "free_trial" : planMode;
+  const effectivePlanMode: PlanMode = resolvedToken === "trial_guest" ? "free_trial" : planMode;
   headers["x-plan-mode"] = effectivePlanMode;
   if (MASTER_KEY) {
     headers["x-master-key"] = MASTER_KEY;
@@ -329,7 +330,7 @@ export interface TrialQuotaPayload {
 export async function sendTrialOtp(
   email: string,
 ): Promise<{ message?: string; error?: string; retry_after?: number }> {
-  const headers = await buildClientHeaders({ contentType: "application/json" });
+  const headers = await buildClientHeaders({ token: null, contentType: "application/json" });
   const res = await fetchWithRetry(buildApiUrl("/api/auth/send-otp"), {
     method: "POST",
     headers,
@@ -350,7 +351,7 @@ export async function verifyTrialOtp(
   email: string,
   otp: string,
 ): Promise<{ token?: string; access_token?: string; jwt?: string; error?: string }> {
-  const headers = await buildClientHeaders({ contentType: "application/json" });
+  const headers = await buildClientHeaders({ token: null, contentType: "application/json" });
   const res = await fetchWithRetry(buildApiUrl("/api/auth/verify-otp"), {
     method: "POST",
     headers,
@@ -760,7 +761,10 @@ export function clearAuthSession(): void {
 
 /**
  * Clear tokens and hard-redirect to login when a protected chat call is unauthorized.
- * Returns true when a 401 was handled.
+ * Does NOT clear the session if a valid access token is still present in storage,
+ * because that would cause a redirect loop when the backend temporarily rejects a
+ * legitimate token (e.g. FaceID/passkey verification required).
+ * Returns true when a 401 was handled (session was cleared).
  */
 export function handleUnauthorizedChatResponse(
   res: Response,
@@ -776,6 +780,12 @@ export function handleUnauthorizedChatResponse(
         : requestUrl.url;
 
   if (!url.includes("/api/chat")) {
+    return false;
+  }
+
+  // If the user still has a valid-looking access token, do NOT clear the session.
+  // A 401 here likely means the backend requires an upgraded token (FaceID/passkey).
+  if (getBearerAccessToken()) {
     return false;
   }
 
