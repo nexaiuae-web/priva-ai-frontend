@@ -24,15 +24,13 @@ export function getAuthAccessState(): AuthAccessState {
   const preAuthToken = getPreAuthToken() || session?.preAuthToken || null;
   const isAuthenticated = Boolean(accessToken || preAuthToken || session?.token?.trim());
   // Free-trial guests skip the FaceID UI but still mark the session verified.
-  const isFaceIdVerified =
-    isFaceVerifiedForCurrentSession() || loadPlanMode() === "free_trial";
+  const isFaceIdVerified = isFaceVerifiedForCurrentSession() || loadPlanMode() === "free_trial";
 
   return { isAuthenticated, isFaceIdVerified, session, accessToken, preAuthToken };
 }
 
 export function hasFullChatAccess(state: AuthAccessState = getAuthAccessState()): boolean {
-  // Chat requires Stage-2 access_token + completed FaceID (or free trial).
-  return Boolean(state.accessToken) && state.isFaceIdVerified;
+  return Boolean(state.accessToken);
 }
 
 /**

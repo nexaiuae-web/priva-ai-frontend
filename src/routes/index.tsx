@@ -13,7 +13,6 @@ import {
   persistPlanMode,
   type AuthSession,
 } from "../lib/api";
-import { PASSKEY_SUPPORTED, handlePasskeyLogin, type PasskeyLoginResult } from "../lib/passkey";
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { FreeTrialOtpModal } from "../components/FreeTrialOtpModal";
 import { useAuth } from "../contexts/AuthContext";
@@ -217,24 +216,6 @@ function LoginPage() {
     void navigate({ to: "/chat" });
   };
 
-  const handlePasskeySignIn = async () => {
-    setError("");
-    setIsLoading(true);
-    try {
-      const result = await handlePasskeyLogin();
-      if (!result.access_token) {
-        throw new Error(result.error || result.details || "Passkey sign-in failed.");
-      }
-      completeFaceVerification(result.access_token);
-      navigate({ to: "/chat" });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "An unexpected error occurred.";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const rateLimitMessage = isRateLimited
     ? t("tooManyAttempts", { time: formatCountdown(rateLimitRemainingSeconds) })
     : error;
@@ -388,39 +369,6 @@ function LoginPage() {
               >
                 {isLoading ? t("authenticating") : t("accessSystem")}
               </button>
-
-              {PASSKEY_SUPPORTED && (
-                <div className="relative flex items-center gap-3 py-1">
-                  <span className="h-px flex-1 bg-[#00E699]/15" />
-                  <span className="text-xs text-[#A3B8B0]">or</span>
-                  <span className="h-px flex-1 bg-[#00E699]/15" />
-                </div>
-              )}
-
-              {PASSKEY_SUPPORTED && (
-                <button
-                  type="button"
-                  onClick={handlePasskeySignIn}
-                  disabled={isLoading}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-[#00E699]/25 py-3.5 text-sm font-semibold text-[#A3B8B0] transition hover:border-[#00E699]/40 hover:text-[#00E699] disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-3.31 0-6 2.01-6 4.5V19h12v-1.5c0-2.49-2.69-4.5-6-4.5z"
-                    />
-                  </svg>
-                  Sign in with Passkey
-                </button>
-              )}
             </form>
           </div>
         </section>
