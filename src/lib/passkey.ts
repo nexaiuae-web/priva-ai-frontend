@@ -96,28 +96,38 @@ async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: s
 }
 
 export async function handlePasskeyLogin(token?: string): Promise<PasskeyLoginResult> {
-  const options = await fetchLoginOptions(token);
+  const authToken = token ?? getAuthToken();
+  if (!authToken) {
+    throw new Error("You must be logged in to sign in with a Passkey.");
+  }
+
+  const options = await fetchLoginOptions(authToken);
 
   const authResp = await startAuthentication({ optionsJSON: options });
 
   const result = await verifyPasskeyResponse<PasskeyLoginResult>(
     "/api/auth/passkey/login-verify",
     authResp,
-    token,
+    authToken,
   );
 
   return result;
 }
 
 export async function handlePasskeyRegister(token?: string): Promise<PasskeyRegisterResult> {
-  const options = await fetchRegisterOptions(token);
+  const authToken = token ?? getAuthToken();
+  if (!authToken) {
+    throw new Error("You must be logged in to register a Passkey on this device.");
+  }
+
+  const options = await fetchRegisterOptions(authToken);
 
   const regResp = await startRegistration({ optionsJSON: options });
 
   const result = await verifyPasskeyResponse<PasskeyRegisterResult>(
     "/api/auth/passkey/register-verify",
     regResp,
-    token,
+    authToken,
   );
 
   return result;
