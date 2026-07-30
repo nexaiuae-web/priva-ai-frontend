@@ -21,6 +21,21 @@ export interface PasskeyRegisterResult {
   verified: boolean;
 }
 
+const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a minute and try again.";
+
+function sanitizeApiError(body: Record<string, unknown>, status: number): string {
+  const raw = typeof body.error === "string" ? body.error : "";
+  if (
+    status === 429 ||
+    raw === "OTP_RATE_LIMITED" ||
+    raw.includes("RATE_LIMITED") ||
+    raw.includes("rate_limit")
+  ) {
+    return RATE_LIMIT_MESSAGE;
+  }
+  return raw || `Request failed (${status})`;
+}
+
 function getAuthToken(): string | undefined {
   const session = loadAuthSession();
   return session?.token || undefined;
@@ -38,7 +53,7 @@ async function fetchLoginOptions(token?: string): Promise<PublicKeyCredentialReq
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as Record<string, string>).error || `Request failed (${res.status})`);
+    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
   }
   return res.json() as Promise<PublicKeyCredentialRequestOptionsJSON>;
 }
@@ -57,7 +72,7 @@ async function fetchRegisterOptions(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as Record<string, string>).error || `Request failed (${res.status})`);
+    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
   }
   return res.json() as Promise<PublicKeyCredentialCreationOptionsJSON>;
 }
@@ -75,7 +90,7 @@ async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: s
   });
   const body = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
-    throw new Error(body.error || `Verification failed (${res.status})`);
+    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
   }
   return body;
 }
