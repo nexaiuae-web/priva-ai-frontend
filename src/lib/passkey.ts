@@ -113,9 +113,6 @@ async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: s
 
 export async function handlePasskeyLogin(token?: string): Promise<PasskeyLoginResult> {
   const authToken = token ?? getAuthToken();
-  if (!authToken) {
-    throw new Error("You must be logged in to sign in with a Passkey.");
-  }
 
   try {
     const options = await fetchLoginOptions(authToken);

@@ -101,6 +101,17 @@ function VerifyFacePage() {
     navigate({ to: "/" });
   }, [clearAuth, navigate]);
 
+  const handleSkipToDashboard = useCallback(() => {
+    const session = loadAuthSession();
+    if (session?.token) {
+      const token = session.token;
+      persistAccessTokenSession(token);
+      setFaceVerifiedForToken(token);
+      completeFaceVerification(token);
+    }
+    navigate({ to: "/chat" });
+  }, [completeFaceVerification, navigate]);
+
   useEffect(() => {
     refreshFromStorage();
     const session = loadAuthSession();
@@ -188,12 +199,20 @@ function VerifyFacePage() {
             </div>
           )}
 
-          <div className="mt-6">
+          <div className="mt-6 space-y-3">
+            <button
+              type="button"
+              onClick={handleSkipToDashboard}
+              disabled={isVerifying}
+              className="w-full rounded-lg border border-[#00E699]/25 py-3 text-sm text-[#00E699] transition hover:border-[#00E699]/40 hover:bg-[#00E699]/5 disabled:opacity-50 sm:text-base"
+            >
+              Skip for now \u2014 Continue to Dashboard
+            </button>
             <button
               type="button"
               onClick={handleReturnToLogin}
               disabled={isVerifying}
-              className="text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
+              className="w-full text-sm text-[#A3B8B0] underline-offset-2 transition hover:text-[#00E699] hover:underline disabled:opacity-50 sm:text-base"
             >
               Return to sign in
             </button>
