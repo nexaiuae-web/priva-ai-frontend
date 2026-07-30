@@ -54,8 +54,8 @@ function VerifyFacePage() {
 
     try {
       const result = await handlePasskeyLogin(session.token);
-      if (!result.verified || !result.access_token) {
-        throw new Error("Biometric verification failed. Please try again.");
+      if (!result.access_token) {
+        throw new Error(result.error || result.details || "Biometric verification failed.");
       }
       persistAccessTokenSession(result.access_token);
       setFaceVerifiedForToken(result.access_token);
@@ -86,7 +86,9 @@ function VerifyFacePage() {
     try {
       const result = await handlePasskeyRegister(session.token);
       if (!result.verified) {
-        throw new Error("Passkey registration was not completed.");
+        throw new Error(
+          result.error || result.details || "Passkey registration was not completed.",
+        );
       }
       setStatus("Passkey registered successfully!");
     } catch (err) {

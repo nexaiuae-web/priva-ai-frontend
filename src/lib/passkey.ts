@@ -15,16 +15,25 @@ export interface PasskeyLoginResult {
   verified: boolean;
   access_token?: string;
   jwt?: string;
+  error?: string;
+  details?: string;
 }
 
 export interface PasskeyRegisterResult {
   verified: boolean;
+  error?: string;
+  details?: string;
 }
 
 const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a minute and try again.";
 
 function sanitizeApiError(body: Record<string, unknown>, status: number): string {
-  const raw = typeof body.error === "string" ? body.error : "";
+  const raw =
+    typeof body.error === "string"
+      ? body.error
+      : typeof body.details === "string"
+        ? body.details
+        : "";
   if (
     status === 429 ||
     raw === "OTP_RATE_LIMITED" ||
@@ -61,6 +70,7 @@ async function fetchLoginOptions(token?: string): Promise<PublicKeyCredentialReq
 async function fetchRegisterOptions(
   token?: string,
 ): Promise<PublicKeyCredentialCreationOptionsJSON> {
+  console.log("[PASSKEY FRONTEND] Fetching register options...");
   const headers = await buildClientHeaders({
     contentType: "application/json",
     planMode: loadPlanMode(),
@@ -70,11 +80,13 @@ async function fetchRegisterOptions(
     method: "POST",
     headers,
   });
+  console.log("[PASSKEY FRONTEND] Register options response status:", res.status);
+  const json = await res.json().catch(() => ({}));
+  console.log("[PASSKEY FRONTEND] Register options response JSON:", JSON.stringify(json));
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
+    throw new Error(sanitizeApiError(json as Record<string, unknown>, res.status));
   }
-  return res.json() as Promise<PublicKeyCredentialCreationOptionsJSON>;
+  return json as PublicKeyCredentialCreationOptionsJSON;
 }
 
 async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: string): Promise<T> {
@@ -101,17 +113,26 @@ export async function handlePasskeyLogin(token?: string): Promise<PasskeyLoginRe
     throw new Error("You must be logged in to sign in with a Passkey.");
   }
 
-  const options = await fetchLoginOptions(authToken);
+  try {
+    const options = await fetchLoginOptions(authToken);
 
-  const authResp = await startAuthentication({ optionsJSON: options });
+    const authResp = await startAuthentication({ optionsJSON: options });
 
-  const result = await verifyPasskeyResponse<PasskeyLoginResult>(
-    "/api/auth/passkey/login-verify",
-    authResp,
-    authToken,
-  );
+    const result = await verifyPasskeyResponse<PasskeyLoginResult>(
+      "/api/auth/passkey/login-verify",
+      authResp,
+      authToken,
+    );
 
-  return result;
+    if (!result.verified) {
+      throw new Error(result.error || result.details || "Biometric verification failed.");
+    }
+
+    return result;
+  } catch (err) {
+    console.error("[PASSKEY FRONTEND ERROR]:", err);
+    throw err;
+  }
 }
 
 export async function handlePasskeyRegister(token?: string): Promise<PasskeyRegisterResult> {
@@ -120,15 +141,24 @@ export async function handlePasskeyRegister(token?: string): Promise<PasskeyRegi
     throw new Error("You must be logged in to register a Passkey on this device.");
   }
 
-  const options = await fetchRegisterOptions(authToken);
+  try {
+    const options = await fetchRegisterOptions(authToken);
 
-  const regResp = await startRegistration({ optionsJSON: options });
+    const regResp = await startRegistration({ optionsJSON: options });
 
-  const result = await verifyPasskeyResponse<PasskeyRegisterResult>(
-    "/api/auth/passkey/register-verify",
-    regResp,
-    authToken,
-  );
+    const result = await verifyPasskeyResponse<PasskeyRegisterResult>(
+      "/api/auth/passkey/register-verify",
+      regResp,
+      authToken,
+    );
 
-  return result;
+    if (!result.verified) {
+      throw new Error(result.error || result.details || "Passkey registration was not completed.");
+    }
+
+    return result;
+  } catch (err) {
+    console.error("[PASSKEY FRONTEND ERROR]:", err);
+    throw err;
+  }
 }
