@@ -85,11 +85,7 @@ function VerifyFacePage() {
 
     try {
       const result = await handlePasskeyRegister(session.token);
-      if (!result.verified) {
-        throw new Error(
-          result.error || result.details || "Passkey registration was not completed.",
-        );
-      }
+      setError("");
       setStatus("Passkey registered successfully!");
     } catch (err) {
       const message = extractPasskeyErrorMessage(err);

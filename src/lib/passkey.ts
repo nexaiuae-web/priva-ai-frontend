@@ -17,12 +17,16 @@ export interface PasskeyLoginResult {
   jwt?: string;
   error?: string;
   details?: string;
+  status?: string;
+  success?: boolean;
 }
 
 export interface PasskeyRegisterResult {
   verified: boolean;
   error?: string;
   details?: string;
+  status?: string;
+  success?: boolean;
 }
 
 const RATE_LIMIT_MESSAGE = "Too many attempts. Please wait a minute and try again.";
@@ -124,8 +128,12 @@ export async function handlePasskeyLogin(token?: string): Promise<PasskeyLoginRe
       authToken,
     );
 
-    if (!result.verified) {
-      throw new Error(result.error || result.details || "Biometric verification failed.");
+    if (result.error || result.details) {
+      throw new Error(result.error || result.details);
+    }
+
+    if (!result.verified && result.success !== true && result.status !== "ok") {
+      throw new Error("Biometric verification failed.");
     }
 
     return result;
@@ -152,8 +160,14 @@ export async function handlePasskeyRegister(token?: string): Promise<PasskeyRegi
       authToken,
     );
 
-    if (!result.verified) {
-      throw new Error(result.error || result.details || "Passkey registration was not completed.");
+    console.log("[PASSKEY REGISTER RESPONSE]:", result);
+
+    if (result.error || result.details) {
+      throw new Error(result.error || result.details);
+    }
+
+    if (!result.verified && result.success !== true && result.status !== "ok") {
+      throw new Error("Passkey registration was not completed.");
     }
 
     return result;
