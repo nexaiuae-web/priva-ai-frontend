@@ -479,12 +479,16 @@ export async function resumePendingUploads(
   );
 }
 
-export function registerBackgroundUploadServiceWorker(): void {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
-  window.addEventListener("load", () => {
+export function registerBackgroundUploadServiceWorker(): () => void {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+    return () => undefined;
+  }
+  const onLoad = () => {
     void navigator.serviceWorker
       .register("/sw.js", { scope: "/" })
       .then((reg) => console.log("[BG-UPLOAD] Service worker registered:", reg.scope))
       .catch((err) => console.warn("[BG-UPLOAD] Service worker registration failed:", err));
-  });
+  };
+  window.addEventListener("load", onLoad);
+  return () => window.removeEventListener("load", onLoad);
 }

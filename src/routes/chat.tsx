@@ -188,15 +188,18 @@ function ChatPage() {
       return;
     }
 
+    const controller = new AbortController();
     void (async () => {
       if (loadPlanMode() === "free_trial") {
         await getDeviceFingerprint();
       }
+      if (controller.signal.aborted) return;
       setAuth(session);
       const initialLocale = resolveAppLocale();
       setLocale(initialLocale);
       setStoredLocale(initialLocale);
     })();
+    return () => controller.abort();
   }, [clearAuth, navigate, refreshFromStorage]);
 
   useEffect(() => {
@@ -212,9 +215,12 @@ function ChatPage() {
     setDocsError("");
     setMessages([DEFAULT_WELCOME_MESSAGE]);
 
+    const controller = new AbortController();
+
     void (async () => {
       try {
         const history = await fetchChatHistory({ token: auth.token, planMode });
+        if (controller.signal.aborted) return;
         const apiMessages = history.messages
           .filter(
             (m) =>
@@ -233,11 +239,16 @@ function ChatPage() {
           return;
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.warn("[Chat] server history load failed — using scoped cache:", err);
       }
 
-      setMessages(loadChatMessagesForScope(scopeKey));
+      if (!controller.signal.aborted) {
+        setMessages(loadChatMessagesForScope(scopeKey));
+      }
     })();
+
+    return () => controller.abort();
   }, [auth?.token, auth?.companyId, planMode]);
 
   useEffect(() => {
@@ -323,7 +334,7 @@ function ChatPage() {
   };
 
   useEffect(() => {
-    registerBackgroundUploadServiceWorker();
+    return registerBackgroundUploadServiceWorker();
   }, []);
 
   useEffect(() => {
@@ -333,9 +344,11 @@ function ChatPage() {
 
   useEffect(() => {
     if (!token) return;
+    const controller = new AbortController();
     void (async () => {
       try {
         const status = await fetchTrialStatus({ token, planMode });
+        if (controller.signal.aborted) return;
         const trial = status?.trial;
         if (!trial || typeof trial !== "object") {
           setTrialStatus(null);
@@ -348,10 +361,12 @@ function ChatPage() {
           storage_limit_bytes: Number(trial.storage_limit_bytes) || 5 * 1024 * 1024,
         });
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.warn("[KB] trial status load failed:", err);
         setTrialStatus(null);
       }
     })();
+    return () => controller.abort();
   }, [token, planMode, docsUploading, isLoading]);
 
   useEffect(() => {
@@ -359,10 +374,14 @@ function ChatPage() {
       setQuestionUsage(null);
       return;
     }
+    const controller = new AbortController();
     void (async () => {
       const usage = await fetchQuestionUsageSnapshot({ token, planMode });
-      setQuestionUsage(usage);
+      if (!controller.signal.aborted) {
+        setQuestionUsage(usage);
+      }
     })();
+    return () => controller.abort();
   }, [token, planMode, isLoading]);
 
   useEffect(() => {
@@ -370,15 +389,20 @@ function ChatPage() {
       setTrialQuota(null);
       return;
     }
+    const controller = new AbortController();
     void (async () => {
       try {
         const quota = await fetchTrialQuota(token);
-        setTrialQuota(quota);
+        if (!controller.signal.aborted) {
+          setTrialQuota(quota);
+        }
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.warn("[KB] trial quota load failed:", err);
         setTrialQuota(null);
       }
     })();
+    return () => controller.abort();
   }, [token, planMode, docsUploading, isLoading]);
 
   useEffect(() => {

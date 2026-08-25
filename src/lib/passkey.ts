@@ -11,6 +11,8 @@ import { buildApiUrl, buildClientHeaders, loadPlanMode, loadAuthSession } from "
 
 export const PASSKEY_SUPPORTED = browserSupportsWebAuthn();
 
+const PASSKEY_TIMEOUT_MS = 8000;
+
 export interface PasskeyLoginResult {
   verified: boolean;
   access_token?: string;
@@ -60,15 +62,27 @@ async function fetchLoginOptions(token?: string): Promise<PublicKeyCredentialReq
     planMode: loadPlanMode(),
     token: token ?? getAuthToken(),
   });
-  const res = await fetch(buildApiUrl("/api/auth/passkey/login-options"), {
-    method: "POST",
-    headers,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PASSKEY_TIMEOUT_MS);
+  try {
+    const res = await fetch(buildApiUrl("/api/auth/passkey/login-options"), {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
+    }
+    return res.json() as Promise<PublicKeyCredentialRequestOptionsJSON>;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Passkey request timed out. Please check your connection and try again.");
+    }
+    throw err;
   }
-  return res.json() as Promise<PublicKeyCredentialRequestOptionsJSON>;
 }
 
 async function fetchRegisterOptions(
@@ -80,17 +94,29 @@ async function fetchRegisterOptions(
     planMode: loadPlanMode(),
     token: token ?? getAuthToken(),
   });
-  const res = await fetch(buildApiUrl("/api/auth/passkey/register-options"), {
-    method: "POST",
-    headers,
-  });
-  console.log("[PASSKEY FRONTEND] Register options response status:", res.status);
-  const json = await res.json().catch(() => ({}));
-  console.log("[PASSKEY FRONTEND] Register options response JSON:", JSON.stringify(json));
-  if (!res.ok) {
-    throw new Error(sanitizeApiError(json as Record<string, unknown>, res.status));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PASSKEY_TIMEOUT_MS);
+  try {
+    const res = await fetch(buildApiUrl("/api/auth/passkey/register-options"), {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    console.log("[PASSKEY FRONTEND] Register options response status:", res.status);
+    const json = await res.json().catch(() => ({}));
+    console.log("[PASSKEY FRONTEND] Register options response JSON:", JSON.stringify(json));
+    if (!res.ok) {
+      throw new Error(sanitizeApiError(json as Record<string, unknown>, res.status));
+    }
+    return json as PublicKeyCredentialCreationOptionsJSON;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Passkey request timed out. Please check your connection and try again.");
+    }
+    throw err;
   }
-  return json as PublicKeyCredentialCreationOptionsJSON;
 }
 
 async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: string): Promise<T> {
@@ -99,16 +125,28 @@ async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: s
     planMode: loadPlanMode(),
     token: token ?? getAuthToken(),
   });
-  const res = await fetch(buildApiUrl(url), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
-  const body = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) {
-    throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), PASSKEY_TIMEOUT_MS);
+  try {
+    const res = await fetch(buildApiUrl(url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const body = (await res.json().catch(() => ({}))) as T & { error?: string };
+    if (!res.ok) {
+      throw new Error(sanitizeApiError(body as Record<string, unknown>, res.status));
+    }
+    return body;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Passkey verification timed out. Please check your connection and try again.");
+    }
+    throw err;
   }
-  return body;
 }
 
 export async function handlePasskeyLogin(token?: string): Promise<PasskeyLoginResult> {

@@ -855,6 +855,7 @@ export const API_RETRY_MESSAGE = "Connection unstable, retrying...";
 const DEFAULT_FETCH_MAX_ATTEMPTS = 2;
 const DEFAULT_FETCH_RETRY_DELAY_MS = 1000;
 const RETRYABLE_HTTP_STATUS = new Set([503, 504]);
+const API_REQUEST_TIMEOUT_MS = 8000;
 
 export type ApiRetryStatus = "idle" | "retrying";
 
@@ -941,6 +942,7 @@ export type FetchWithRetryOptions = {
 /**
  * Global fetch wrapper: retries network failures (TypeError) and 503/504 responses.
  * Clones FormData and other bodies before retrying so uploads remain safe.
+ * Automatically aborts requests after API_REQUEST_TIMEOUT_MS (8s) to prevent UI freezes.
  */
 export async function fetchWithRetry(
   input: RequestInfo | URL,
@@ -955,8 +957,23 @@ export async function fetchWithRetry(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const requestInit = attempt === 1 ? init : cloneRequestInit(init);
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+
+    // Merge with any caller-provided signal
+    const userSignal = requestInit?.signal;
+    if (userSignal) {
+      if (userSignal.aborted) {
+        controller.abort();
+      } else {
+        userSignal.addEventListener("abort", () => controller.abort(), { once: true });
+      }
+    }
+
     try {
-      const res = await fetch(input, requestInit);
+      const res = await fetch(input, { ...requestInit, signal: controller.signal });
+
+      clearTimeout(timeoutId);
 
       if (isRetryableHttpStatus(res.status) && attempt < maxAttempts) {
         if (notify) {
@@ -974,7 +991,16 @@ export async function fetchWithRetry(
       handleUnauthorizedChatResponse(res, input);
       return res;
     } catch (err) {
+      clearTimeout(timeoutId);
       lastError = err;
+
+      // AbortError means timeout or explicit cancellation — do NOT retry
+      if (err instanceof DOMException && err.name === "AbortError") {
+        if (notify) {
+          notifyApiRetryStatus("idle");
+        }
+        throw new Error("Request timed out. Please check your connection and try again.");
+      }
 
       if (!isBackendUnreachableError(err) || attempt >= maxAttempts) {
         if (notify) {

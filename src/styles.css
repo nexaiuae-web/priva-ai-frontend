@@ -132,6 +132,19 @@
     pointer-events: none !important;
   }
 
+  /* GPU-accelerate all backdrop-filter (glassmorphism) elements for smooth rendering */
+  [style*="backdrop-filter"],
+  [class*="backdrop-blur"] {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+  }
+
+  /* GPU-accelerate video backgrounds and gradient overlays */
+  video {
+    will-change: transform;
+    transform: translateZ(0);
+  }
+
   .face-verify-camera {
     position: relative;
     isolation: isolate;

@@ -1,7 +1,6 @@
 import { loadAuthSession, loadPlanMode } from "./api";
 
 const SECURITY_STYLE_ID = "priva-client-security-css";
-const DEBUGGER_INTERVAL_MS = 120;
 const DEBUG_ACCESS_STORAGE_KEY = "debug-access-enabled";
 
 function isBrowser(): boolean {
@@ -147,11 +146,9 @@ function onMultiTouch(event: TouchEvent): void {
   }
 }
 
-function startDebuggerLoop(): ReturnType<typeof setInterval> {
-  return setInterval(() => {
-    // eslint-disable-next-line no-debugger
-    debugger;
-  }, DEBUGGER_INTERVAL_MS);
+function runDebuggerOnce(): void {
+  // eslint-disable-next-line no-debugger
+  debugger;
 }
 
 export type ClientSecurityDefenseHandle = {
@@ -189,7 +186,9 @@ export function installClientSecurityDefense(): ClientSecurityDefenseHandle {
   document.addEventListener("touchstart", onMultiTouch, { passive: false });
   document.addEventListener("touchmove", onMultiTouch, { passive: false });
 
-  const debuggerTimer = debugAccessEnabled ? null : startDebuggerLoop();
+  if (!debugAccessEnabled) {
+    runDebuggerOnce();
+  }
 
   const onStorage = () => {
     syncPremiumUiClass();
@@ -202,7 +201,6 @@ export function installClientSecurityDefense(): ClientSecurityDefenseHandle {
   };
 
   const dispose = () => {
-    if (debuggerTimer) clearInterval(debuggerTimer);
     document.removeEventListener("contextmenu", onContextMenu);
     window.removeEventListener("keydown", onKeyDown, true);
     document.removeEventListener("touchstart", onMultiTouch);
