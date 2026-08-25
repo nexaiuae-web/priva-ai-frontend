@@ -12,7 +12,6 @@ import {
   Trash2,
   LogOut,
   Send,
-  Settings,
   Upload,
   X,
 } from "lucide-react";
@@ -23,7 +22,6 @@ import { ChatMessageActions } from "../components/ChatMessageActions";
 import { RequireAuth } from "../components/RequireAuth";
 import { UploadProgressCard } from "../components/UploadProgressCard";
 import { useAuth } from "../contexts/AuthContext";
-import { PASSKEY_SUPPORTED, handlePasskeyRegister } from "../lib/passkey";
 import { enforceChatAccess, hasFullChatAccess } from "../lib/authGuard";
 import {
   API_BASE,
@@ -150,7 +148,6 @@ function ChatPage() {
   const [questionUsage, setQuestionUsage] = useState<QuestionUsageSnapshot | null>(null);
   const [trialQuota, setTrialQuota] = useState<TrialQuotaPayload | null>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const safeDocs = Array.isArray(docs) ? docs : [];
   const safeFolders = Array.isArray(folders) ? folders : [];
@@ -895,27 +892,6 @@ function ChatPage() {
     setMessages([DEFAULT_WELCOME_MESSAGE]);
   };
 
-  const [settingsPasskeyStatus, setSettingsPasskeyStatus] = useState("");
-
-  const handleOpenSettings = () => {
-    setSettingsOpen(true);
-    setSettingsPasskeyStatus("");
-  };
-
-  const handleRegisterPasskeyFromSettings = async () => {
-    setSettingsPasskeyStatus("Setting up\u2026");
-    try {
-      const result = await handlePasskeyRegister();
-      if (!result.verified && result.success !== true && result.status !== "ok") {
-        throw new Error(result.error || result.details || "Registration failed.");
-      }
-      setSettingsPasskeyStatus("Passkey registered successfully!");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "An unexpected error occurred.";
-      setSettingsPasskeyStatus(msg);
-    }
-  };
-
   const handleLogout = () => {
     clearAuth();
     clearWorkspaceClientState();
@@ -1094,14 +1070,6 @@ function ChatPage() {
       </div>
 
       <div className="shrink-0 space-y-2 p-4">
-        <button
-          type="button"
-          onClick={handleOpenSettings}
-          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-[#041C15]/60 px-4 py-3 text-xs font-bold uppercase tracking-wider text-[#A3B8B0] transition-all hover:bg-[#054232]/30 hover:text-[#00E699]"
-        >
-          <Settings size={16} />
-          Settings
-        </button>
         <button
           type="button"
           onClick={handleLogout}
@@ -1547,77 +1515,6 @@ function ChatPage() {
                 onClose={() => setFolderModalOpen(false)}
                 onCreate={handleCreateFolder}
               />
-
-              {settingsOpen && (
-                <div
-                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-                  role="presentation"
-                  onClick={() => setSettingsOpen(false)}
-                >
-                  <div
-                    className="w-full max-w-md rounded-2xl border border-[#00E699]/20 p-6 shadow-xl"
-                    style={{ background: "rgba(4, 28, 21, 0.96)" }}
-                    role="dialog"
-                    aria-modal="true"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="mb-5 flex items-center justify-between">
-                      <h2 className="text-lg font-semibold text-white">Settings</h2>
-                      <button
-                        type="button"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#00E699]/20 text-[#A3B8B0] transition-colors hover:bg-[#054232]/50 hover:text-white"
-                        onClick={() => setSettingsOpen(false)}
-                      >
-                        <X size={16} />
-                      </button>
-                    </div>
-
-                    <div className="space-y-4">
-                      {PASSKEY_SUPPORTED ? (
-                        <div className="rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 p-4">
-                          <h3 className="mb-1 text-sm font-semibold text-white">
-                            Biometric / Passkey
-                          </h3>
-                          <p className="mb-3 text-xs text-[#A3B8B0]">
-                            Register your device's Face ID, Touch ID, or platform passkey for quick
-                            sign-in.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={handleRegisterPasskeyFromSettings}
-                            disabled={settingsPasskeyStatus === "Setting up\u2026"}
-                            className="w-full rounded-lg border border-[#00E699]/25 py-2.5 text-sm font-semibold text-[#00E699] transition hover:bg-[#00E699]/10 disabled:opacity-50"
-                          >
-                            Enable Passkey / Face ID on this Device
-                          </button>
-                          {settingsPasskeyStatus && (
-                            <p
-                              className={`mt-2 text-xs ${
-                                settingsPasskeyStatus.includes("successfully")
-                                  ? "text-[#00E699]"
-                                  : settingsPasskeyStatus === "Setting up\u2026"
-                                    ? "text-[#A3B8B0]"
-                                    : "text-red-400"
-                              }`}
-                            >
-                              {settingsPasskeyStatus}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-[#00E699]/20 bg-[#041C15]/60 p-4">
-                          <h3 className="mb-1 text-sm font-semibold text-white">
-                            Biometric / Passkey
-                          </h3>
-                          <p className="text-xs text-[#A3B8B0]">
-                            Your device does not support Face ID, Touch ID, or passkeys.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </main>
