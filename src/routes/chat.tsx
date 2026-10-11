@@ -237,6 +237,13 @@ function ChatPage() {
         }
       } catch (err) {
         if (controller.signal.aborted) return;
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        if (errorMessage.includes("401") || errorMessage.includes("Full authentication required")) {
+          if (typeof window !== "undefined") {
+            window.location.href = "/";
+          }
+          return;
+        }
         console.warn("[Chat] server history load failed — using scoped cache:", err);
       }
 
@@ -628,6 +635,15 @@ function ChatPage() {
         } catch {
           if (errBody) detail = errBody;
         }
+
+        // Redirect to login on 401 or "Full authentication required" error
+        if (res.status === 401 || detail.includes("Full authentication required")) {
+          if (typeof window !== "undefined") {
+            window.location.href = "/";
+          }
+          return;
+        }
+
         if (code === "TRIAL_LIMIT_REACHED") {
           detail = TRIAL_LIMIT_MESSAGE;
         }
