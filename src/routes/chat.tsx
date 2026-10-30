@@ -131,9 +131,12 @@ function ChatPage() {
   const [docsError, setDocsError] = useState("");
   const [uploadProgress, setUploadProgress] = useState<UploadProgressState | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
+  const [fileDragActive, setFileDragActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const activeUploadIdRef = useRef<string | null>(null);
+  const uploadGenerationRef = useRef(0);
+  const uploadingRef = useRef(false);
   const chatScopeKeyRef = useRef<string | null>(null);
 
   const [auth, setAuth] = useState<AuthSession | null>(null);
@@ -739,45 +742,44 @@ function ChatPage() {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || docsUploading || !token) return;
-
-    const MAX_TRIAL_FILE_SIZE = 5 * 1024 * 1024;
-    if (planMode === "free_trial" && file.size > MAX_TRIAL_FILE_SIZE) {
-      toast.error("Free Trial limit: Maximum file size is 5MB.", { duration: 5000 });
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    const quota = await fetchStorageQuotaSnapshot({
-      token,
-      planMode,
-      cached: trialStatus
-        ? {
-            usedBytes: trialStatus.storage_used_bytes,
-            limitBytes: trialStatus.storage_limit_bytes,
-          }
-        : null,
-    });
-
-    if (quota && wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)) {
-      showStorageQuotaToast();
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    setDocsUploading(true);
-    setDocsError("");
-    setUploadingFilename(file.name);
-    setUploadProgress({
-      percent: 0,
-      phase: "Starting background upload…",
-      current: 0,
-      total: 0,
-    });
+  const uploadFile = async (file: File) => {
+    if (!file || docsUploading || uploadingRef.current || !token) return;
+    uploadingRef.current = true;
+    const uploadGeneration = ++uploadGenerationRef.current;
 
     try {
+      const MAX_TRIAL_FILE_SIZE = 5 * 1024 * 1024;
+      if (planMode === "free_trial" && file.size > MAX_TRIAL_FILE_SIZE) {
+        toast.error("Free Trial limit: Maximum file size is 5MB.", { duration: 5000 });
+        return;
+      }
+
+      const quota = await fetchStorageQuotaSnapshot({
+        token,
+        planMode,
+        cached: trialStatus
+          ? {
+              usedBytes: trialStatus.storage_used_bytes,
+              limitBytes: trialStatus.storage_limit_bytes,
+            }
+          : null,
+      });
+
+      if (quota && wouldExceedStorageQuota(quota.usedBytes, quota.limitBytes, file.size)) {
+        showStorageQuotaToast();
+        return;
+      }
+
+      setDocsUploading(true);
+      setDocsError("");
+      setUploadingFilename(file.name);
+      setUploadProgress({
+        percent: 0,
+        phase: "Starting background upload…",
+        current: 0,
+        total: 0,
+      });
+
       const workspaceUserId = getWorkspaceUserIdFromToken(token);
       console.log("[UPLOAD] starting background upload", file.name);
 
@@ -810,7 +812,11 @@ function ChatPage() {
             total: 0,
           });
           await refreshKnowledgeBase(currentFolderId);
-          window.setTimeout(() => setUploadProgress(null), 2000);
+          window.setTimeout(() => {
+            if (uploadGenerationRef.current === uploadGeneration) {
+              setUploadProgress(null);
+            }
+          }, 2000);
         },
       });
     } catch (err) {
@@ -818,12 +824,74 @@ function ChatPage() {
       setUploadProgress(null);
       showUploadErrorToast(err);
     } finally {
+      uploadingRef.current = false;
       activeUploadIdRef.current = null;
       setDocsUploading(false);
       setUploadingFilename(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    void uploadFile(file);
+  };
+
+  const isNativeFileDrag = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer.types).includes("Files");
+
+  const handleKnowledgeDragEnter = (e: React.DragEvent) => {
+    if (!isNativeFileDrag(e)) return;
+    e.preventDefault();
+    setFileDragActive(true);
+  };
+
+  const handleKnowledgeDragOver = (e: React.DragEvent) => {
+    if (!isNativeFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = docsUploading || !token ? "none" : "copy";
+    if (!fileDragActive) setFileDragActive(true);
+  };
+
+  const handleKnowledgeDragLeave = (e: React.DragEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isOutsidePanel =
+      e.clientX <= rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY <= rect.top ||
+      e.clientY >= rect.bottom;
+    if (isOutsidePanel) setFileDragActive(false);
+  };
+
+  const handleKnowledgeDrop = (e: React.DragEvent) => {
+    if (!isNativeFileDrag(e)) return;
+    e.preventDefault();
+    setFileDragActive(false);
+
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length === 0) return;
+    void (async () => {
+      for (const file of files) {
+        await uploadFile(file);
+      }
+    })();
+  };
+
+  // Prevent the browser from navigating away when a file is dropped outside the zone.
+  useEffect(() => {
+    const preventFileDropNavigation = (event: DragEvent) => {
+      if (Array.from(event.dataTransfer?.types ?? []).includes("Files")) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("dragover", preventFileDropNavigation);
+    window.addEventListener("drop", preventFileDropNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventFileDropNavigation);
+      window.removeEventListener("drop", preventFileDropNavigation);
+    };
+  }, []);
 
   const handleCreateFolder = async (name: string) => {
     if (!token) return;
@@ -1311,7 +1379,39 @@ function ChatPage() {
             </div>
           ) : (
             /* Knowledge base panel */
-            <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <div
+              className={`relative flex h-full min-h-0 flex-1 flex-col overflow-hidden transition-shadow ${
+                fileDragActive ? "ring-2 ring-inset ring-[#00E699]/70" : ""
+              }`}
+              onDragEnter={handleKnowledgeDragEnter}
+              onDragOver={handleKnowledgeDragOver}
+              onDragLeave={handleKnowledgeDragLeave}
+              onDrop={handleKnowledgeDrop}
+            >
+              {fileDragActive ? (
+                <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[#041C15]/85 p-4 backdrop-blur-sm">
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="flex w-full max-w-md flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-[#00E699]/60 bg-[#054232]/40 px-6 py-10 text-center shadow-[0_0_32px_rgba(0,230,153,0.18)]"
+                  >
+                    <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#054232]/70">
+                      <Upload
+                        size={28}
+                        className={docsUploading ? "text-[#00E699]/50" : "text-[#00E699]"}
+                      />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {docsUploading ? t("uploading") : t("dropFileToUpload")}
+                      </p>
+                      <p className="mt-1 text-xs text-[#A3B8B0]">
+                        {docsUploading ? t("dropFileUploadBusyHint") : t("dropFileToUploadHint")}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="flex shrink-0 flex-col gap-3 border-b border-[#00E699]/10 px-4 py-3 backdrop-blur-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-6 sm:py-4">
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-semibold text-white sm:text-base">

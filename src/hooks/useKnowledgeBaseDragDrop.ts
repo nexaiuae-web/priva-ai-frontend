@@ -10,6 +10,11 @@ function resolveDropTargetFromPoint(clientX: number, clientY: number): string | 
   return id || null;
 }
 
+/** Native OS file drags must be left to the upload drop zone, not the folder mover. */
+function isNativeFileDrag(e: React.DragEvent): boolean {
+  return Array.from(e.dataTransfer.types).includes("Files");
+}
+
 export interface UseKnowledgeBaseDragDropOptions {
   onMove: (documentId: string, folderId: string | null) => Promise<void>;
   /** When inside a folder, allow dropping onto Root breadcrumb. */
@@ -33,8 +38,7 @@ export function useKnowledgeBaseDragDrop({
 
   const executeMove = useCallback(
     async (documentId: string, targetDropId: string | null) => {
-      const folderId =
-        targetDropId == null || targetDropId === ROOT_DROP_ID ? null : targetDropId;
+      const folderId = targetDropId == null || targetDropId === ROOT_DROP_ID ? null : targetDropId;
       setMovingDocId(documentId);
       try {
         await onMove(documentId, folderId);
@@ -61,6 +65,7 @@ export function useKnowledgeBaseDragDrop({
 
   const handleDragOver = useCallback(
     (dropId: string) => (e: React.DragEvent) => {
+      if (isNativeFileDrag(e)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       setDropTargetId(dropId);
@@ -68,36 +73,39 @@ export function useKnowledgeBaseDragDrop({
     [],
   );
 
-  const handleDragLeave = useCallback((dropId: string) => (e: React.DragEvent) => {
-    const related = e.relatedTarget as Node | null;
-    const current = e.currentTarget as HTMLElement;
-    if (related && current.contains(related)) return;
-    setDropTargetId((prev) => (prev === dropId ? null : prev));
-  }, []);
+  const handleDragLeave = useCallback(
+    (dropId: string) => (e: React.DragEvent) => {
+      if (isNativeFileDrag(e)) return;
+      const related = e.relatedTarget as Node | null;
+      const current = e.currentTarget as HTMLElement;
+      if (related && current.contains(related)) return;
+      setDropTargetId((prev) => (prev === dropId ? null : prev));
+    },
+    [],
+  );
 
-  const handleDropOnTarget =
-    (targetDropId: string) => async (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const documentId =
-        e.dataTransfer.getData("text/plain") || draggingDocId || "";
-      if (!documentId) {
-        clearDragState();
-        return;
-      }
-      if (targetDropId === ROOT_DROP_ID && !allowRootDrop) {
-        clearDragState();
-        return;
-      }
-      await executeMove(documentId, targetDropId);
-    };
+  const handleDropOnTarget = (targetDropId: string) => async (e: React.DragEvent) => {
+    // Let native file drops bubble to the knowledge-base upload zone.
+    if (isNativeFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const documentId = e.dataTransfer.getData("text/plain") || draggingDocId || "";
+    if (!documentId) {
+      clearDragState();
+      return;
+    }
+    if (targetDropId === ROOT_DROP_ID && !allowRootDrop) {
+      clearDragState();
+      return;
+    }
+    await executeMove(documentId, targetDropId);
+  };
 
-  const handleTouchStart =
-    (documentId: string) => (e: React.TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      touchDragDocIdRef.current = documentId;
-      setDraggingDocId(documentId);
-    };
+  const handleTouchStart = (documentId: string) => (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    touchDragDocIdRef.current = documentId;
+    setDraggingDocId(documentId);
+  };
 
   const handleTouchEnd = useCallback(async () => {
     const documentId = touchDragDocIdRef.current;
