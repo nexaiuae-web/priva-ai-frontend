@@ -15,6 +15,22 @@ export default defineConfig({
     build: {
       sourcemap: true,
     },
+    environments: {
+      client: {
+        build: {
+          rollupOptions: {
+            input: "index.html",
+          },
+        },
+      },
+      ssr: {
+        build: {
+          rollupOptions: {
+            input: "src/main.tsx",
+          },
+        },
+      },
+    },
   },
   tanstackStart: {
     client: {
@@ -23,7 +39,8 @@ export default defineConfig({
     spa: {
       enabled: true,
       prerender: {
-        outputPath: "/index",
+        crawlLinks: false,
+        routes: [],
       },
     },
   },
