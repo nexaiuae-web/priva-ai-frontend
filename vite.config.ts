@@ -22,8 +22,16 @@ export default defineConfig({
     },
     plugins: [
       {
-        name: "stub-node-builtins",
-        resolveId(id) {
+        name: "stub-node-builtins-client",
+        enforce: "pre",
+        apply(config, { command, isSsrBuild }) {
+          if (command === "build") {
+            return true;
+          }
+          return true;
+        },
+        resolveId(id, importer) {
+          const isClient = !importer?.includes("server") && !importer?.includes("ssr") && (importer?.includes("client") || importer?.includes("main.tsx") || importer?.includes("router") || importer?.includes("index.html"));
           if (id === "@tanstack/start-storage-context") {
             return path.resolve(__dirname, "./src/stubs/start-storage-context.ts");
           }
@@ -39,27 +47,29 @@ export default defineConfig({
     ],
     environments: {
       client: {
+        resolve: {
+          alias: {
+            "@tanstack/start-storage-context": path.resolve(__dirname, "./src/stubs/start-storage-context.ts"),
+            "node:async_hooks": path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
+            async_hooks: path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
+          },
+        },
         build: {
           rollupOptions: {
             input: "index.html",
             external: [
               /^node:/,
               "node:async_hooks",
-              "node:events",
-              "node:stream",
-              "node:util",
-              "node:buffer",
-              "node:crypto",
-              "node:fs",
-              "node:path",
-              "node:os",
-              "node:process",
               "async_hooks",
+              "@tanstack/start-storage-context",
             ],
           },
         },
       },
       ssr: {
+        resolve: {
+          alias: {},
+        },
         build: {
           rollupOptions: {
             input: "src/main.tsx",
