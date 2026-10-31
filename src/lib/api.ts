@@ -1041,7 +1041,11 @@ export async function fetchWithRetry(
     }
 
     try {
-      const res = await fetch(input, { ...requestInit, signal: controller.signal });
+      const res = await fetch(input, {
+        ...requestInit,
+        signal: controller.signal,
+        credentials: "include",
+      });
 
       clearTimeout(timeoutId);
 

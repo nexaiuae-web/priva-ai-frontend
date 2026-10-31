@@ -69,6 +69,7 @@ async function fetchLoginOptions(token?: string): Promise<PublicKeyCredentialReq
       method: "POST",
       headers,
       signal: controller.signal,
+      credentials: "include",
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
@@ -101,6 +102,7 @@ async function fetchRegisterOptions(
       method: "POST",
       headers,
       signal: controller.signal,
+      credentials: "include",
     });
     clearTimeout(timeoutId);
     console.log("[PASSKEY FRONTEND] Register options response status:", res.status);
@@ -133,6 +135,7 @@ async function verifyPasskeyResponse<T>(url: string, payload: unknown, token?: s
       headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
+      credentials: "include",
     });
     clearTimeout(timeoutId);
     const body = (await res.json().catch(() => ({}))) as T & { error?: string };
