@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Info, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import ReCAPTCHA from "react-google-recaptcha";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   API_BASE,
@@ -71,21 +70,17 @@ function LoginPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const { persistLogin, completeFaceVerification, clearAuth } = useAuth();
-  const recaptchaRef = useRef<ReCAPTCHA | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [showCaptcha, setShowCaptcha] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [rateLimitedUntil, setRateLimitedUntil] = useState<number | null>(null);
   const [rateLimitRemainingSeconds, setRateLimitRemainingSeconds] = useState(0);
   const [otpModalOpen, setOtpModalOpen] = useState(false);
 
   const isRateLimited = rateLimitedUntil !== null && rateLimitRemainingSeconds > 0;
-  const awaitingCaptchaSolve = showCaptcha && !captchaToken;
 
   useEffect(() => {
     if (rateLimitedUntil === null) {
@@ -109,28 +104,11 @@ function LoginPage() {
     return () => window.clearInterval(id);
   }, [rateLimitedUntil]);
 
-  const clearCaptchaToken = () => {
-    setCaptchaToken(null);
-    recaptchaRef.current?.reset();
-  };
-
-  const handleCaptchaChange = (token: string | null) => {
-    if (token) {
-      setCaptchaToken(token);
-      setShowCaptcha(false);
-      return;
-    }
-    setCaptchaToken(null);
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRateLimited || awaitingCaptchaSolve) return;
+    if (isRateLimited) return;
 
-    if (showCaptcha && !captchaToken) {
-      setError(t("captchaRequired"));
-      return;
-    }
 
     setError("");
     setIsLoading(true);
@@ -139,15 +117,7 @@ function LoginPage() {
       persistPlanMode("premium");
       clearWorkspaceClientState();
 
-      const payload: {
-        username: string;
-        password: string;
-        captchaToken?: string;
-      } = { username, password };
-
-      if (captchaToken) {
-        payload.captchaToken = captchaToken;
-      }
+      const payload = { username, password };
 
       const res = await fetchWithRetry(`${API_BASE}/api/login`, {
         method: "POST",
@@ -182,11 +152,9 @@ function LoginPage() {
       const err = (await res.json().catch(() => ({}))) as LoginErrorBody;
 
       // Always drop the used/invalid token so a fresh challenge is required next time.
-      clearCaptchaToken();
 
       if (res.status === 429) {
         clearAuth();
-        setShowCaptcha(false);
         const retrySeconds = parseRetryAfterSeconds(res, err);
         setRateLimitedUntil(Date.now() + retrySeconds * 1000);
         setRateLimitRemainingSeconds(retrySeconds);
@@ -196,24 +164,14 @@ function LoginPage() {
 
       if (res.status === 403 && err.error === "USER_LIMIT_REACHED") {
         clearAuth();
-        setShowCaptcha(false);
         setError(err.message || t("usersLimitReached"));
         return;
       }
 
-      // Only show reCAPTCHA when backend explicitly requires it (403 / requireCaptcha).
-      // Standard 401s (first failures) do not reveal the widget.
-      if (res.status === 403 || err.requireCaptcha === true) {
-        setShowCaptcha(true);
-      } else {
-        setShowCaptcha(false);
-      }
-
+      // reCAPTCHA bypassed for development/testing.
       clearAuth();
       setError(t("invalidCredentials"));
     } catch (err) {
-      clearCaptchaToken();
-      setShowCaptcha(false);
       setError(isBackendUnreachableError(err) ? BACKEND_UNREACHABLE_MESSAGE : t("loginFailed"));
     } finally {
       setIsLoading(false);
@@ -345,18 +303,7 @@ function LoginPage() {
                 />
               </div>
 
-              {showCaptcha && !isRateLimited ? (
-                <div className="flex justify-center">
-                  <ReCAPTCHA
-                    ref={recaptchaRef}
-                    sitekey={RECAPTCHA_SITE_KEY}
-                    theme="dark"
-                    onChange={handleCaptchaChange}
-                    onExpired={() => setCaptchaToken(null)}
-                    onErrored={() => setCaptchaToken(null)}
-                  />
-                </div>
-              ) : null}
+
 
               {(error || isRateLimited) && (
                 <div
@@ -373,7 +320,7 @@ function LoginPage() {
 
               <button
                 type="submit"
-                disabled={isLoading || isRateLimited || awaitingCaptchaSolve}
+                disabled={isLoading || isRateLimited}
                 className="w-full rounded-lg py-3.5 text-sm font-bold tracking-widest text-white uppercase transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 sm:py-4 sm:text-base md:py-4"
                 style={{
                   background: "#054232",
