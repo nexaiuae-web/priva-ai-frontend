@@ -1317,6 +1317,9 @@ export function extractStreamContent(parsed: unknown): string | null {
   if (typeof payload.content === "string") return payload.content;
   if (typeof payload.reply === "string") return payload.reply;
   if (typeof payload.text === "string") return payload.text;
+  if (typeof payload.answer === "string") return payload.answer;
+  if (typeof payload.output === "string") return payload.output;
+  if (typeof payload.result === "string") return payload.result;
 
   return null;
 }
