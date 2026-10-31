@@ -5,6 +5,11 @@
 //     error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PRODUCTION_API_TARGET = "https://priva-ai-api.onrender.com";
 
@@ -15,11 +20,39 @@ export default defineConfig({
     build: {
       sourcemap: true,
     },
+    plugins: [
+      {
+        name: "stub-node-builtins",
+        resolveId(id) {
+          if (id === "node:async_hooks" || id === "async_hooks") {
+            return path.resolve(__dirname, "./src/stubs/node-async-hooks.ts");
+          }
+          if (id.startsWith("node:")) {
+            return path.resolve(__dirname, "./src/stubs/node-async-hooks.ts");
+          }
+          return null;
+        },
+      },
+    ],
     environments: {
       client: {
         build: {
           rollupOptions: {
             input: "index.html",
+            external: [
+              /^node:/,
+              "node:async_hooks",
+              "node:events",
+              "node:stream",
+              "node:util",
+              "node:buffer",
+              "node:crypto",
+              "node:fs",
+              "node:path",
+              "node:os",
+              "node:process",
+              "async_hooks",
+            ],
           },
         },
       },
@@ -30,6 +63,15 @@ export default defineConfig({
           },
         },
       },
+    },
+    resolve: {
+      alias: {
+        "node:async_hooks": path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
+        async_hooks: path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
+      },
+    },
+    optimizeDeps: {
+      exclude: ["node:async_hooks", "async_hooks", "@tanstack/start-storage-context"],
     },
   },
   tanstackStart: {
