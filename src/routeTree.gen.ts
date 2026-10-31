@@ -9,13 +9,13 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifyFaceRouteImport } from './routes/verify-face'
-import { Route as ChatRouteImport } from './routes/chat'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ChatRouteImport } from './routes/chat'
+import { Route as VerifyFaceRouteImport } from './routes/verify-face'
 
-const VerifyFaceRoute = VerifyFaceRouteImport.update({
-  id: '/verify-face',
-  path: '/verify-face',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -23,9 +23,9 @@ const ChatRoute = ChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const VerifyFaceRoute = VerifyFaceRouteImport.update({
+  id: '/verify-face',
+  path: '/verify-face',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -61,11 +61,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verify-face': {
-      id: '/verify-face'
-      path: '/verify-face'
-      fullPath: '/verify-face'
-      preLoaderRoute: typeof VerifyFaceRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -75,11 +75,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/verify-face': {
+      id: '/verify-face'
+      path: '/verify-face'
+      fullPath: '/verify-face'
+      preLoaderRoute: typeof VerifyFaceRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
