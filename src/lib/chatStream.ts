@@ -11,6 +11,8 @@ export interface ChatStreamEvent {
 }
 
 export function parseChatStreamPayload(payload: string): ChatStreamEvent | null {
+  // Debug: print every raw SSE/JSON chunk handed to the parser.
+  console.log("[chatStream] raw chunk:", payload);
   if (!payload || payload === "[DONE]") return null;
   try {
     const parsed = JSON.parse(payload) as ChatStreamEvent;

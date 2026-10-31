@@ -660,6 +660,17 @@ function ChatPage() {
         }),
       });
 
+      // Debug: print the entire raw HTTP response body for the company/workspace
+      // chat endpoint so the exact server envelope can be inspected.
+      void res
+        .clone()
+        .text()
+        .then((rawBody) => {
+          console.log("[chat] raw HTTP response status:", res.status, res.statusText);
+          console.log("[chat] raw HTTP response body:", rawBody);
+        })
+        .catch(() => {});
+
       if (handleUnauthorizedChatResponse(res, chatUrl)) {
         return;
       }
@@ -723,6 +734,8 @@ function ChatPage() {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
+          // Debug: print each raw SSE/JSON chunk received from the chat endpoint.
+          console.log("[chat] raw SSE line:", line);
           const result = processStreamLine(line, assistantText, streamSources, streamFilenames);
           assistantText = result.text;
           streamSources = result.sources;
@@ -732,6 +745,8 @@ function ChatPage() {
       }
 
       if (buffer.trim()) {
+        // Debug: print the final buffered SSE/JSON chunk.
+        console.log("[chat] raw SSE buffer:", buffer);
         const result = processStreamLine(buffer, assistantText, streamSources, streamFilenames);
         assistantText = result.text;
         streamSources = result.sources;
