@@ -162,6 +162,18 @@ function LoginPage() {
       if (res.ok) {
         const data = await res.json();
         const session = persistLogin(data, username);
+        // Explicitly extract the access token from the login response and persist
+        // it to localStorage so token-based auth works through the Vercel proxy.
+        const loginAccessToken =
+          (typeof data?.access_token === "string" && data.access_token.trim()) ||
+          (typeof data?.accessToken === "string" && data.accessToken.trim()) ||
+          (typeof data?.token === "string" && data.token.trim()) ||
+          (typeof data?.jwt === "string" && data.jwt.trim()) ||
+          session.token;
+        if (loginAccessToken) {
+          localStorage.setItem("access_token", loginAccessToken);
+          localStorage.setItem("token", loginAccessToken);
+        }
         completeFaceVerification(session.token);
         navigate({ to: "/chat" });
         return;

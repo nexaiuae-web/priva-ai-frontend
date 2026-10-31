@@ -1025,8 +1025,20 @@ export async function fetchWithRetry(
   const notify = options.notify !== false;
   let lastError: unknown;
 
+  // Explicit token-based auth: the Vercel rewrite proxy does not reliably
+  // forward HttpOnly cookies, so always pull the bearer token from localStorage
+  // and inject it into the Authorization header for every API request.
+  const authToken = getBearerAccessToken();
+  const authenticatedInit: RequestInit | undefined = authToken
+    ? (() => {
+        const headers = new Headers(init?.headers);
+        headers.set("Authorization", `Bearer ${authToken}`);
+        return { ...init, headers };
+      })()
+    : init;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const requestInit = attempt === 1 ? init : cloneRequestInit(init);
+    const requestInit = attempt === 1 ? authenticatedInit : cloneRequestInit(authenticatedInit);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
