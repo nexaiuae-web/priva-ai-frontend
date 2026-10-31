@@ -155,7 +155,9 @@ function ChatPage() {
   const safeDocs = Array.isArray(docs) ? docs : [];
   const safeFolders = Array.isArray(folders) ? folders : [];
 
-  const token = auth?.accessToken ?? contextAccessToken ?? getBearerAccessToken() ?? null;
+  // Use the active session token (Stage-1 pre_auth or Stage-2 access) so the
+  // Authorization header is always populated for company/workspace chats.
+  const token = auth?.token ?? auth?.accessToken ?? contextAccessToken ?? getBearerAccessToken() ?? null;
   const companyId = auth?.companyId ?? "default";
   const companyLabel =
     planMode === "free_trial" ? t("freeTrial") : (auth?.companyName ?? companyId);
@@ -636,7 +638,8 @@ function ChatPage() {
     setMessages((prev) => [...prev, { role: "assistant", content: "", sources: [] }]);
 
     try {
-      const accessTokenForRequest = getBearerAccessToken() ?? token;
+      const accessTokenForRequest =
+        auth?.token ?? auth?.accessToken ?? getBearerAccessToken() ?? token ?? loadAuthSession()?.token ?? null;
       if (!accessTokenForRequest) {
         clearAuth();
         void navigate({ to: "/", replace: true });
@@ -644,14 +647,19 @@ function ChatPage() {
       }
 
       const chatUrl = `${API_BASE}/api/chat`;
+      // Explicitly attach the Bearer token for workspace/company chat requests.
+      const requestHeaders = await buildClientHeaders({
+        token: accessTokenForRequest,
+        planMode,
+        contentType: "application/json",
+        accept: "text/event-stream",
+      });
+      if (accessTokenForRequest) {
+        requestHeaders.Authorization = `Bearer ${accessTokenForRequest}`;
+      }
       const res = await fetchWithRetry(chatUrl, {
         method: "POST",
-        headers: await buildClientHeaders({
-          token: accessTokenForRequest,
-          planMode,
-          contentType: "application/json",
-          accept: "text/event-stream",
-        }),
+        headers: requestHeaders,
         body: JSON.stringify({
           message: userMsg,
           company_id: companyId,
