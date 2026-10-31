@@ -24,6 +24,9 @@ export default defineConfig({
       {
         name: "stub-node-builtins",
         resolveId(id) {
+          if (id === "@tanstack/start-storage-context") {
+            return path.resolve(__dirname, "./src/stubs/start-storage-context.ts");
+          }
           if (id === "node:async_hooks" || id === "async_hooks") {
             return path.resolve(__dirname, "./src/stubs/node-async-hooks.ts");
           }
@@ -66,6 +69,7 @@ export default defineConfig({
     },
     resolve: {
       alias: {
+        "@tanstack/start-storage-context": path.resolve(__dirname, "./src/stubs/start-storage-context.ts"),
         "node:async_hooks": path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
         async_hooks: path.resolve(__dirname, "./src/stubs/node-async-hooks.ts"),
       },
