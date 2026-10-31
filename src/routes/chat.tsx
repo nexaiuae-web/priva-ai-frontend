@@ -285,7 +285,11 @@ function ChatPage() {
         if (controller.signal.aborted) return;
         const errorMessage = err instanceof Error ? err.message : String(err);
         if (errorMessage.includes("401") || errorMessage.includes("Full authentication required")) {
-          if (typeof window !== "undefined") {
+          // Do not hard-redirect to login here: handleUnauthorizedChatResponse
+          // already avoids clearing the session while a token is present, so a
+          // redirect would just create an unauthorized loop. Fall through to the
+          // cached messages instead.
+          if (typeof window !== "undefined" && !getBearerAccessToken()) {
             window.location.href = "/";
           }
           return;
