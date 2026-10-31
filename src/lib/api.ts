@@ -15,9 +15,10 @@ function getConfiguredApiBaseUrl(): string {
   return normalizeApiBaseUrl(import.meta.env.VITE_API_URL || PRODUCTION_API_URL);
 }
 
-/** Dev uses same-origin `/api` (Vite proxy). Production uses the configured backend URL. */
+/** Use same-origin `/api` in all environments so Vercel's rewrite proxy (and the
+ *  Vite dev proxy) forward requests to the backend, preserving HttpOnly cookies. */
 export function getApiBaseUrl(): string {
-  return import.meta.env.PROD ? getConfiguredApiBaseUrl() : "";
+  return "";
 }
 
 export function buildApiUrl(path: string): string {
