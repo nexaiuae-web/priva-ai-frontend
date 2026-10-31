@@ -10,7 +10,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview --config vite.config.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "postinstall": "node -e \"const fs=require('fs');const p='node_modules/@tanstack/start-storage-context/dist/esm/async-local-storage.js';if(fs.existsSync(p)){fs.writeFileSync(p,'export class AsyncLocalStorage{constructor(){}disable(){}getStore(){return undefined;}run(s,c,...a){if(typeof c==='function')return c(...a);return undefined;}exit(c,...a){if(typeof c==='function')return c(...a);return undefined;}enterWith(){} }class AsyncLocalStorageImpl{constructor(){this.storage=new AsyncLocalStorage();}getStore(){try{return this.storage.getStore();}catch{return undefined;}}run(s,f){try{return this.storage.run(s,f);}catch{return typeof f==='function'?f():undefined;}}enterWith(s){try{this.storage.enterWith(s);}catch{}}disable(){try{this.storage.disable();}catch{}}}var storage=new AsyncLocalStorageImpl();export{storage as asyncLocalStorage,AsyncLocalStorageImpl as AsyncLocalStorage};export default storage;');}\""
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.25.5",
@@ -45,9 +46,9 @@
     "@simplewebauthn/browser": "^13.3.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/react-query": "^5.83.0",
-    "@tanstack/react-router": "^1.170.46",
-    "@tanstack/react-start": "^1.169.4",
-    "@tanstack/router-plugin": "^1.168.48",
+    "@tanstack/react-router": "^1.168.25",
+    "@tanstack/react-start": "^1.167.50",
+    "@tanstack/router-plugin": "^1.167.28",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
