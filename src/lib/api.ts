@@ -549,10 +549,48 @@ export function getAccessToken(): string | null {
  */
 export function getBearerAccessToken(): string | null {
   if (!canUseWebStorage()) return null;
-  const access = localStorage.getItem(AUTH_STORAGE_KEYS.accessToken);
-  if (access?.trim()) return access.trim();
 
-  // Migration: legacy single-key sessions after FaceID / guest trial.
+  // Check every storage key that may hold a bearer/access token, including
+  // legacy, alternate casing, and company/workspace-specific variants.
+  const candidateKeys = [
+    AUTH_STORAGE_KEYS.accessToken,
+    "access_token",
+    "accessToken",
+    "priva_access_token",
+    "priva_token",
+    "token",
+    "bearer",
+    "bearer_token",
+    "bearerToken",
+    "priva_company_token",
+    "company_token",
+    "companyToken",
+    "workspace_token",
+    "workspaceToken",
+    "priva_workspace_token",
+    AUTH_STORAGE_KEYS.token,
+  ];
+
+  for (const key of candidateKeys) {
+    if (key === AUTH_STORAGE_KEYS.preAuthToken) continue;
+    const value = localStorage.getItem(key);
+    if (value?.trim()) {
+      return value.trim();
+    }
+  }
+
+  // Fall back to scanning all localStorage keys for anything token-like.
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || key === AUTH_STORAGE_KEYS.preAuthToken) continue;
+    if (!/token|access|bearer/i.test(key)) continue;
+    const value = localStorage.getItem(key);
+    if (value?.trim()) {
+      return value.trim();
+    }
+  }
+
+  // Legacy single-key sessions after FaceID / guest trial.
   const legacy = localStorage.getItem(AUTH_STORAGE_KEYS.token);
   if (!legacy?.trim() || localStorage.getItem(AUTH_STORAGE_KEYS.preAuthToken)) {
     return null;
