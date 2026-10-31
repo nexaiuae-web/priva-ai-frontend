@@ -369,14 +369,46 @@ export async function verifyTrialOtp(
   return body;
 }
 
+function toFiniteNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Reads the free-trial usage counters.
+ *
+ * `/api/trial/quota` responds with the trial-status envelope
+ * (`{ is_trial_mode, fingerprint_hash, trial: { request_count, request_limit,
+ * storage_used_bytes, storage_limit_bytes, ... } }`), so the values have to be
+ * unwrapped from `trial`. A flat `{ queries_used, queries_limit, ... }` shape is
+ * still accepted for backwards compatibility.
+ */
 export async function fetchTrialQuota(token: string): Promise<TrialQuotaPayload> {
   const headers = await buildClientHeaders({ token, planMode: "free_trial" });
   const res = await fetchWithRetry(buildApiUrl("/api/trial/quota"), { headers });
-  const body = (await res.json().catch(() => ({}))) as TrialQuotaPayload;
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     throw new Error("Failed to load trial quota.");
   }
-  return body;
+
+  const trial =
+    body.trial && typeof body.trial === "object"
+      ? (body.trial as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  return {
+    email: typeof body.email === "string" ? body.email : "",
+    queries_used: toFiniteNumber(body.queries_used ?? trial.request_count, 0),
+    queries_limit: toFiniteNumber(body.queries_limit ?? trial.request_limit, 5),
+    storage_used_bytes: toFiniteNumber(
+      body.storage_used_bytes ?? trial.storage_used_bytes,
+      0,
+    ),
+    storage_limit_bytes: toFiniteNumber(
+      body.storage_limit_bytes ?? trial.storage_limit_bytes,
+      DEFAULT_TRIAL_STORAGE_LIMIT_BYTES,
+    ),
+  };
 }
 
 export const AUTH_STORAGE_KEYS = {
