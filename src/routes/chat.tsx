@@ -171,6 +171,49 @@ function ChatPage() {
     [locale],
   );
 
+  const applyTrialStatusSnapshot = useCallback(
+    (status: Awaited<ReturnType<typeof fetchTrialStatus>> | null) => {
+      const trial = status?.trial;
+      if (!trial || typeof trial !== "object") {
+        setTrialStatus(null);
+        return;
+      }
+      setTrialStatus({
+        remaining_requests: Number(trial.remaining_requests) || 0,
+        request_limit: Number(trial.request_limit) || 5,
+        storage_used_bytes: Number(trial.storage_used_bytes) || 0,
+        storage_limit_bytes: Number(trial.storage_limit_bytes) || 5 * 1024 * 1024,
+      });
+    },
+    [],
+  );
+
+  /**
+   * Re-read the usage counters shown in the sidebar right after an action that
+   * consumes quota (chat query, upload, delete). Called explicitly instead of
+   * relying on effect re-runs, which raced with the action's own response and
+   * could resolve with stale pre-action numbers.
+   */
+  const refreshUsageCounters = useCallback(async () => {
+    const activeToken = getBearerAccessToken() ?? token;
+    if (!activeToken) return;
+    try {
+      if (planMode === "free_trial") {
+        const [status, quota] = await Promise.all([
+          fetchTrialStatus({ token: activeToken, planMode }).catch(() => null),
+          fetchTrialQuota(activeToken).catch(() => null),
+        ]);
+        applyTrialStatusSnapshot(status);
+        if (quota) setTrialQuota(quota);
+        return;
+      }
+      const usage = await fetchQuestionUsageSnapshot({ token: activeToken, planMode });
+      setQuestionUsage(usage);
+    } catch (err) {
+      console.warn("[usage] counter refresh failed:", err);
+    }
+  }, [applyTrialStatusSnapshot, planMode, token]);
+
   useEffect(() => {
     // Defense in depth — beforeLoad + RequireAuth already enforce this.
     refreshFromStorage();
@@ -356,17 +399,7 @@ function ChatPage() {
       try {
         const status = await fetchTrialStatus({ token, planMode });
         if (controller.signal.aborted) return;
-        const trial = status?.trial;
-        if (!trial || typeof trial !== "object") {
-          setTrialStatus(null);
-          return;
-        }
-        setTrialStatus({
-          remaining_requests: Number(trial.remaining_requests) || 0,
-          request_limit: Number(trial.request_limit) || 5,
-          storage_used_bytes: Number(trial.storage_used_bytes) || 0,
-          storage_limit_bytes: Number(trial.storage_limit_bytes) || 5 * 1024 * 1024,
-        });
+        applyTrialStatusSnapshot(status);
       } catch (err) {
         if (controller.signal.aborted) return;
         console.warn("[KB] trial status load failed:", err);
@@ -374,7 +407,7 @@ function ChatPage() {
       }
     })();
     return () => controller.abort();
-  }, [token, planMode, docsUploading, isLoading]);
+  }, [token, planMode, applyTrialStatusSnapshot]);
 
   useEffect(() => {
     if (!token || planMode === "free_trial") {
@@ -389,7 +422,7 @@ function ChatPage() {
       }
     })();
     return () => controller.abort();
-  }, [token, planMode, isLoading]);
+  }, [token, planMode]);
 
   useEffect(() => {
     if (!token || planMode !== "free_trial") {
@@ -410,7 +443,7 @@ function ChatPage() {
       }
     })();
     return () => controller.abort();
-  }, [token, planMode, docsUploading, isLoading]);
+  }, [token, planMode]);
 
   useEffect(() => {
     if (!token || !companyId || docsUploading) return;
@@ -654,20 +687,7 @@ function ChatPage() {
           detail = QUESTION_QUOTA_EXCEEDED_MESSAGE;
         }
         showAssistantError(detail);
-        try {
-          if (planMode === "free_trial") {
-            const status = await fetchTrialStatus({ token: accessTokenForRequest, planMode });
-            setTrialStatus(status.trial);
-          } else {
-            const usage = await fetchQuestionUsageSnapshot({
-              token: accessTokenForRequest,
-              planMode,
-            });
-            setQuestionUsage(usage);
-          }
-        } catch {
-          /* ignore */
-        }
+        await refreshUsageCounters();
         return;
       }
 
@@ -720,16 +740,8 @@ function ChatPage() {
         );
       }
 
-      if (planMode !== "free_trial") {
-        const accessTokenForUsage = getBearerAccessToken() ?? token;
-        if (accessTokenForUsage) {
-          const usage = await fetchQuestionUsageSnapshot({
-            token: accessTokenForUsage,
-            planMode,
-          });
-          setQuestionUsage(usage);
-        }
-      }
+      // Usage was just consumed — re-read the sidebar counters immediately.
+      await refreshUsageCounters();
     } catch (err) {
       const message = isBackendUnreachableError(err)
         ? BACKEND_UNREACHABLE_MESSAGE
@@ -812,6 +824,7 @@ function ChatPage() {
             total: 0,
           });
           await refreshKnowledgeBase(currentFolderId);
+          await refreshUsageCounters();
           window.setTimeout(() => {
             if (uploadGenerationRef.current === uploadGeneration) {
               setUploadProgress(null);
@@ -959,6 +972,7 @@ function ChatPage() {
       });
       if (res.ok) {
         setDocs((prev) => prev.filter((doc) => doc.id !== id));
+        await refreshUsageCounters();
       } else {
         setDocsError(t("deleteFailedStatus", { status: res.status }));
       }
