@@ -676,9 +676,12 @@ function ChatPage() {
           if (errBody) detail = errBody;
         }
 
-        // Redirect to login on 401 or "Full authentication required" error
+        // A 401 here while a token is still present means the backend rejected the
+        // request for a reason other than missing auth (e.g. company/token mismatch).
+        // Do not hard-redirect to login in that case — that causes an unauthorized
+        // loop in company/workspace mode. Only bounce when there is no token at all.
         if (res.status === 401 || detail.includes("Full authentication required")) {
-          if (typeof window !== "undefined") {
+          if (typeof window !== "undefined" && !getBearerAccessToken()) {
             window.location.href = "/";
           }
           return;
