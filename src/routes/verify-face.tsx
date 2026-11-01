@@ -6,6 +6,7 @@ import {
   loadAuthSession,
   persistAccessTokenSession,
   setFaceVerifiedForToken,
+  verifyFaceSnapshot,
 } from "../lib/api";
 import { enforceLoginSession } from "../lib/authGuard";
 import { useAuth } from "../contexts/AuthContext";
@@ -101,15 +102,34 @@ function VerifyFacePage() {
     navigate({ to: "/" });
   }, [clearAuth, navigate]);
 
-  const handleSkipToDashboard = useCallback(() => {
-    const session = loadAuthSession();
-    if (session?.token) {
-      const token = session.token;
-      persistAccessTokenSession(token);
-      setFaceVerifiedForToken(token);
-      completeFaceVerification(token);
+  const handleSkipToDashboard = useCallback(async () => {
+    if (isVerifyingRef.current) return;
+    setIsVerifying(true);
+    setError("");
+    setStatus("Provisioning session...");
+
+    try {
+      // Exchange the Stage-1 pre_auth_token for a Stage-2 access_token via the
+      // backend token exchange endpoint. This ensures chat requests are
+      // authenticated with a valid access token rather than a pre-auth token,
+      // which would cause "Full authentication required" (401).
+      const result = await verifyFaceSnapshot(undefined);
+
+      if (result.access_token) {
+        // verifyFaceSnapshot already persists the token via persistAccessTokenSession
+        setFaceVerifiedForToken(result.access_token);
+        completeFaceVerification(result.access_token);
+        navigate({ to: "/chat" });
+      } else {
+        throw new Error("Failed to obtain access token.");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Skip failed.";
+      setError(message);
+      setStatus("Skip failed.");
+    } finally {
+      setIsVerifying(false);
     }
-    navigate({ to: "/chat" });
   }, [completeFaceVerification, navigate]);
 
   useEffect(() => {
