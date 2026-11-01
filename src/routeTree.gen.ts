@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatRouteImport } from './routes/chat'
-import { Route as VerifyFaceRouteImport } from './routes/verify-face'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -23,40 +22,31 @@ const ChatRoute = ChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VerifyFaceRoute = VerifyFaceRouteImport.update({
-  id: '/verify-face',
-  path: '/verify-face',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/verify-face': typeof VerifyFaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/verify-face': typeof VerifyFaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chat': typeof ChatRoute
-  '/verify-face': typeof VerifyFaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/chat' | '/verify-face'
+  fullPaths: '/' | '/chat'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/chat' | '/verify-face'
-  id: '__root__' | '/' | '/chat' | '/verify-face'
+  to: '/' | '/chat'
+  id: '__root__' | '/' | '/chat'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatRoute: typeof ChatRoute
-  VerifyFaceRoute: typeof VerifyFaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,20 +65,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/verify-face': {
-      id: '/verify-face'
-      path: '/verify-face'
-      fullPath: '/verify-face'
-      preLoaderRoute: typeof VerifyFaceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatRoute: ChatRoute,
-  VerifyFaceRoute: VerifyFaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

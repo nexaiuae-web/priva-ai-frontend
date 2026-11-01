@@ -19,10 +19,9 @@ import { useKnowledgeBaseDragDrop } from "../hooks/useKnowledgeBaseDragDrop";
 import { NewFolderModal } from "../components/NewFolderModal";
 import { AssistantMessage } from "../components/AssistantMessage";
 import { ChatMessageActions } from "../components/ChatMessageActions";
-import { RequireAuth } from "../components/RequireAuth";
 import { UploadProgressCard } from "../components/UploadProgressCard";
 import { useAuth } from "../contexts/AuthContext";
-import { enforceChatAccess, hasFullChatAccess } from "../lib/authGuard";
+import { hasFullChatAccess } from "../lib/authGuard";
 import {
   API_BASE,
   BACKEND_UNREACHABLE_MESSAGE,
@@ -92,19 +91,12 @@ import {
 import { getDeviceFingerprint } from "../lib/deviceFingerprint";
 
 function ProtectedChatPage() {
-  return (
-    <RequireAuth requireFaceId>
-      <ChatPage />
-    </RequireAuth>
-  );
+  return <ChatPage />;
 }
 
 export const Route = createFileRoute("/chat")({
   component: ProtectedChatPage,
   ssr: false,
-  beforeLoad: () => {
-    enforceChatAccess();
-  },
 });
 
 interface ChatMessage extends StoredChatMessage {
